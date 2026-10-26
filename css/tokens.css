@@ -1,0 +1,116 @@
+/* Design tokens. Palette: ocean #123D40, teal #31B6A6, coral #F28A72, cream #F8F5EF, sand #E7B66C */
+:root {
+  --ocean: #123d40;
+  --teal: #31b6a6;
+  --coral: #f28a72;
+  --cream: #f8f5ef;
+  --sand: #e7b66c;
+
+  /* accent is user-selectable (see prefs.js); --accent-strong keeps white text at >= 4.5:1 */
+  --accent: #31b6a6;
+  --accent-strong: #1a7c74;
+  --on-accent: #ffffff;
+
+  --bg: #f8f5ef;
+  --bg-sky: #dcefef;
+  --surface: #ffffff;
+  --surface-2: #f3efe6;
+  --surface-3: #ebe6da;
+  --text: #17363a;
+  --muted: #5a6f6e;
+  --line: #e6e0d3;
+  --danger: #b3382a;
+  --danger-bg: #fbe9e5;
+  --success: #1b7a4b;
+  --success-bg: #e3f4ea;
+  --warn: #8a5a0b;
+  --warn-bg: #fbf0d9;
+  --info-bg: #e4f1f3;
+  --focus: #1769d1;
+
+  --tone-sand: #fdf0d6;
+  --tone-sand-ink: #8a5a0b;
+  --tone-coral: #fde6e0;
+  --tone-coral-ink: #b24a33;
+  --tone-teal: #dcf3ef;
+  --tone-teal-ink: #176b64;
+
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 24px;
+  --shadow-sm: 0 1px 2px rgb(18 61 64 / 6%), 0 2px 8px rgb(18 61 64 / 5%);
+  --shadow-md: 0 4px 12px rgb(18 61 64 / 8%), 0 12px 28px rgb(18 61 64 / 8%);
+  --shadow-lg: 0 10px 30px rgb(18 61 64 / 14%), 0 24px 60px rgb(18 61 64 / 12%);
+
+  --font: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, sans-serif;
+  --nav-h: 68px;
+  --gutter: 16px;
+  --ease: cubic-bezier(0.22, 0.8, 0.28, 1);
+  --dur: 220ms;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0e1f21;
+    --bg-sky: #12302f;
+    --surface: #162b2e;
+    --surface-2: #1c3639;
+    --surface-3: #244347;
+    --text: #f1eee7;
+    --muted: #a5b9b6;
+    --line: #28454a;
+    --danger: #ff9a8a;
+    --danger-bg: #3a1f1c;
+    --success: #7fdba6;
+    --success-bg: #17352a;
+    --warn: #efc479;
+    --warn-bg: #3a2d12;
+    --info-bg: #17353a;
+    --focus: #7db8ff;
+    --tone-sand: #3a2f17;
+    --tone-sand-ink: #efc479;
+    --tone-coral: #3b2320;
+    --tone-coral-ink: #ffa994;
+    --tone-teal: #173b38;
+    --tone-teal-ink: #7fdacd;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-md: 0 6px 18px rgb(0 0 0 / 35%);
+    --shadow-lg: 0 14px 40px rgb(0 0 0 / 45%);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1f21;
+  --bg-sky: #12302f;
+  --surface: #162b2e;
+  --surface-2: #1c3639;
+  --surface-3: #244347;
+  --text: #f1eee7;
+  --muted: #a5b9b6;
+  --line: #28454a;
+  --danger: #ff9a8a;
+  --danger-bg: #3a1f1c;
+  --success: #7fdba6;
+  --success-bg: #17352a;
+  --warn: #efc479;
+  --warn-bg: #3a2d12;
+  --info-bg: #17353a;
+  --focus: #7db8ff;
+  --tone-sand: #3a2f17;
+  --tone-sand-ink: #efc479;
+  --tone-coral: #3b2320;
+  --tone-coral-ink: #ffa994;
+  --tone-teal: #173b38;
+  --tone-teal-ink: #7fdacd;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-md: 0 6px 18px rgb(0 0 0 / 35%);
+  --shadow-lg: 0 14px 40px rgb(0 0 0 / 45%);
+}
+
+@media (min-width: 900px) {
+  :root {
+    --gutter: 32px;
+  }
+}

@@ -1,0 +1,245 @@
+// Data models, enums, factories and normalizers. Pure: no DOM, no storage.
+
+export const SCHEMA_VERSION = 1;
+export const APP_VERSION = '1.0.0';
+
+export const CATEGORY_PRESETS = [
+  { id: 'clothing', label: 'Clothing', icon: 'shirt' },
+  { id: 'toiletries', label: 'Toiletries', icon: 'drop' },
+  { id: 'electronics', label: 'Electronics', icon: 'plug' },
+  { id: 'documents', label: 'Documents', icon: 'file' },
+  { id: 'essentials', label: 'Essentials', icon: 'star' },
+  { id: 'misc', label: 'Miscellaneous', icon: 'box' },
+];
+
+export const TRIP_TYPES = [
+  { id: 'beach', label: 'Beach', icon: 'beach', days: 7 },
+  { id: 'city', label: 'City', icon: 'city', days: 4 },
+  { id: 'business', label: 'Business', icon: 'briefcase', days: 3 },
+  { id: 'camping', label: 'Camping', icon: 'camping', days: 4 },
+  { id: 'winter', label: 'Winter', icon: 'winter', days: 6 },
+  { id: 'custom', label: 'Custom', icon: 'sliders', days: 4 },
+];
+
+export const TRANSPORTS = [
+  { id: '', label: 'Not set' },
+  { id: 'flight', label: 'Flight' },
+  { id: 'car', label: 'Car' },
+  { id: 'train', label: 'Train' },
+  { id: 'bus', label: 'Bus' },
+  { id: 'ship', label: 'Ship' },
+  { id: 'other', label: 'Other' },
+];
+
+export const BAG_KINDS = [
+  { id: 'carry-on', label: 'Carry-on', icon: 'suitcase' },
+  { id: 'checked', label: 'Checked', icon: 'luggage' },
+  { id: 'backpack', label: 'Backpack', icon: 'backpack' },
+  { id: 'other', label: 'Other bag', icon: 'box' },
+];
+
+export const PRIORITIES = [
+  { id: 'low', label: 'Low' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'high', label: 'High' },
+];
+
+export const TASK_PHASES = [
+  { id: 'before', label: 'Before trip' },
+  { id: 'during', label: 'During trip' },
+  { id: 'return', label: 'Return' },
+];
+
+export const LIMITS = {
+  name: 80,
+  destination: 80,
+  notes: 500,
+  itemName: 80,
+  itemNotes: 300,
+  category: 40,
+  bagName: 40,
+  taskTitle: 120,
+  maxQty: 99,
+  maxTravelers: 50,
+};
+
+const ids = (list) => list.map((x) => x.id);
+const TRIP_TYPE_IDS = ids(TRIP_TYPES);
+const TRANSPORT_IDS = ids(TRANSPORTS);
+const BAG_KIND_IDS = ids(BAG_KINDS);
+const PRIORITY_IDS = ids(PRIORITIES);
+const PHASE_IDS = ids(TASK_PHASES);
+const PRESET_IDS = ids(CATEGORY_PRESETS);
+
+export function newId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${hex()}${hex()}-${hex()}-${hex()}-${hex()}-${hex()}${hex()}${hex()}`;
+}
+
+export const nowIso = () => new Date().toISOString();
+
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+export const isId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v);
+
+/** Single-line text: strips control characters, collapses whitespace, caps length. */
+export function cleanText(v, max) {
+  if (typeof v !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  return v.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** Multi-line text: keeps newlines, strips other control characters. */
+export function cleanMultiline(v, max) {
+  if (typeof v !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  return v.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, '').trim().slice(0, max);
+}
+
+/** Accepts only a real calendar date in YYYY-MM-DD form. */
+export function cleanDate(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return '';
+  const [y, m, d] = v.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const valid = dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  return valid ? v : '';
+}
+
+export function cleanIso(v) {
+  if (typeof v !== 'string') return '';
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? '' : new Date(t).toISOString();
+}
+
+export function clampInt(v, min, max, fallback) {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+const enumOr = (v, allowed, fallback) => (allowed.includes(v) ? v : fallback);
+
+/** Preset ids are canonical; any other non-empty text is a user-defined category. */
+export function normalizeCategory(v) {
+  const text = cleanText(v, LIMITS.category);
+  if (!text) return 'misc';
+  const lower = text.toLowerCase();
+  return PRESET_IDS.includes(lower) ? lower : text;
+}
+
+export function categoryMeta(id) {
+  const preset = CATEGORY_PRESETS.find((c) => c.id === id);
+  return preset || { id, label: id, icon: 'box' };
+}
+
+export function normalizeTrip(raw) {
+  if (!isObj(raw) || !isId(raw.id)) return null;
+  const destination = cleanText(raw.destination, LIMITS.destination);
+  const name = cleanText(raw.name, LIMITS.name) || destination;
+  if (!name) return null;
+  const startDate = cleanDate(raw.startDate);
+  let endDate = cleanDate(raw.endDate);
+  if (startDate && endDate && endDate < startDate) endDate = startDate;
+  const createdAt = cleanIso(raw.createdAt) || nowIso();
+  return {
+    id: raw.id,
+    name,
+    destination,
+    type: enumOr(raw.type, TRIP_TYPE_IDS, 'custom'),
+    startDate,
+    endDate,
+    transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
+    travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
+    notes: cleanMultiline(raw.notes, LIMITS.notes),
+    status: raw.status === 'archived' ? 'archived' : 'active',
+    createdAt,
+    updatedAt: cleanIso(raw.updatedAt) || createdAt,
+  };
+}
+
+export function normalizeBag(raw) {
+  if (!isObj(raw) || !isId(raw.id) || !isId(raw.tripId)) return null;
+  const name = cleanText(raw.name, LIMITS.bagName);
+  if (!name) return null;
+  return {
+    id: raw.id,
+    tripId: raw.tripId,
+    name,
+    kind: enumOr(raw.kind, BAG_KIND_IDS, 'other'),
+    order: Number.isFinite(raw.order) ? raw.order : 0,
+  };
+}
+
+export function normalizeItem(raw) {
+  if (!isObj(raw) || !isId(raw.id) || !isId(raw.tripId)) return null;
+  const name = cleanText(raw.name, LIMITS.itemName);
+  if (!name) return null;
+  const target = clampInt(raw.target, 1, LIMITS.maxQty, 1);
+  const createdAt = cleanIso(raw.createdAt) || nowIso();
+  return {
+    id: raw.id,
+    tripId: raw.tripId,
+    bagId: isId(raw.bagId) ? raw.bagId : '',
+    category: normalizeCategory(raw.category),
+    name,
+    target,
+    packed: clampInt(raw.packed, 0, target, 0), // invariant: 0 <= packed <= target
+    essential: raw.essential === true,
+    priority: enumOr(raw.priority, PRIORITY_IDS, 'normal'),
+    notes: cleanMultiline(raw.notes, LIMITS.itemNotes),
+    order: Number.isFinite(raw.order) ? raw.order : 0,
+    createdAt,
+    updatedAt: cleanIso(raw.updatedAt) || createdAt,
+  };
+}
+
+export function normalizeTask(raw) {
+  if (!isObj(raw) || !isId(raw.id) || !isId(raw.tripId)) return null;
+  const title = cleanText(raw.title, LIMITS.taskTitle);
+  if (!title) return null;
+  const createdAt = cleanIso(raw.createdAt) || nowIso();
+  return {
+    id: raw.id,
+    tripId: raw.tripId,
+    title,
+    phase: enumOr(raw.phase, PHASE_IDS, 'before'),
+    dueDate: cleanDate(raw.dueDate),
+    done: raw.done === true,
+    order: Number.isFinite(raw.order) ? raw.order : 0,
+    createdAt,
+    updatedAt: cleanIso(raw.updatedAt) || createdAt,
+  };
+}
+
+export function normalizeTemplate(raw) {
+  if (!isObj(raw) || !isId(raw.id)) return null;
+  const name = cleanText(raw.name, LIMITS.name);
+  if (!name) return null;
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .slice(0, 500)
+    .map((i) => ({
+      category: normalizeCategory(i?.category),
+      name: cleanText(i?.name, LIMITS.itemName),
+      target: clampInt(i?.target, 1, LIMITS.maxQty, 1),
+      essential: i?.essential === true,
+    }))
+    .filter((i) => i.name);
+  return {
+    id: raw.id,
+    name,
+    type: enumOr(raw.type, TRIP_TYPE_IDS, 'custom'),
+    items,
+    createdAt: cleanIso(raw.createdAt) || nowIso(),
+  };
+}
+
+const stamp = () => {
+  const t = nowIso();
+  return { createdAt: t, updatedAt: t };
+};
+
+// Factories always assign a fresh id and fresh timestamps, even when copying from an existing record.
+export const makeTrip = (fields) => normalizeTrip({ ...fields, id: newId(), ...stamp() });
+export const makeBag = (fields) => normalizeBag({ ...fields, id: newId() });
+export const makeItem = (fields) => normalizeItem({ ...fields, id: newId(), ...stamp() });
+export const makeTask = (fields) => normalizeTask({ ...fields, id: newId(), ...stamp() });
