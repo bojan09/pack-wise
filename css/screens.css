@@ -344,11 +344,17 @@
 
 .dash-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
+.dash-actions .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .dash-actions .btn-block {
-  flex: 1;
+  flex: 1 1 100%;
 }
 
 .recent {

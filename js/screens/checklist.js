@@ -1,4 +1,5 @@
-// Packing checklist: category cards, filters, quantity steppers, bag management.
+// Packing checklist: category cards, filters, sorting, quantity steppers, bulk edit,
+// drag/keyboard reorder, bag management.
 import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button, checkbox, chip, emptyState, field, iconButton, progressBar, ring, selectInput, stepper } from '../ui/components.js';
@@ -9,6 +10,7 @@ import { bagProgress, categoryProgress, essentialsLeft, isItemPacked, sumQty } f
 import { getTrip, tripBags, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
 import { pageHeader, tripSubtitle } from './shared.js';
+import { returnTripDialog, saveTemplateDialog } from './tripDialogs.js';
 
 const FILTERS = [
   ['all', 'All'],
@@ -16,6 +18,13 @@ const FILTERS = [
   ['packed', 'Packed'],
   ['essential', 'Essentials'],
 ];
+
+const SORTS = [
+  { id: 'manual', label: 'My order' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'name', label: 'Name A–Z' },
+];
+const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
 export function ChecklistScreen(ctx) {
   const { store, navigate, params } = ctx;
@@ -25,6 +34,9 @@ export function ChecklistScreen(ctx) {
 
   let filter = 'all';
   let bagFilter = 'all';
+  let sortBy = 'manual';
+  let selecting = false;
+  const selected = new Set();
   const collapsed = new Set();
   let quickCategory = null;
   const search = h('input', { type: 'search', class: 'search-input', placeholder: 'Search items', 'aria-label': 'Search items', 'data-key': 'item-search', onInput: () => ctx.refresh() });
@@ -39,21 +51,35 @@ export function ChecklistScreen(ctx) {
     return true;
   };
 
+  const sorter = () => {
+    if (sortBy === 'name') return (a, b) => a.name.localeCompare(b.name);
+    if (sortBy === 'priority') return (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.order - b.order || a.name.localeCompare(b.name);
+    return (a, b) => a.order - b.order || a.name.localeCompare(b.name);
+  };
+
+  const canReorder = () => sortBy === 'manual' && filter === 'all' && bagFilter === 'all' && !search.value.trim() && !selecting;
+
   async function openMenu(trip) {
     const choice = await actionSheet({
       title: trip.name,
       actions: [
+        { id: 'studio', label: 'Packing Studio', icon: 'luggage' },
         { id: 'bags', label: 'Manage bags', icon: 'suitcase' },
         { id: 'tasks', label: 'Travel tasks', icon: 'tasks' },
         { id: 'summary', label: 'Trip summary', icon: 'check' },
+        { id: 'return', label: 'Plan return trip…', icon: 'arrowR' },
+        { id: 'template', label: 'Save as template…', icon: 'copy' },
         { id: 'edit', label: 'Edit trip', icon: 'edit' },
         { id: 'dup', label: 'Duplicate trip', icon: 'copy' },
         { id: 'archive', label: 'Archive trip', icon: 'archive' },
       ],
     });
-    if (choice === 'bags') manageBags(store, tripId);
+    if (choice === 'studio') navigate(`/trip/${tripId}/studio`);
+    else if (choice === 'bags') manageBags(store, tripId);
     else if (choice === 'tasks') navigate(`/trip/${tripId}/tasks`);
     else if (choice === 'summary') navigate(`/trip/${tripId}/summary`);
+    else if (choice === 'return') returnTripDialog({ store, tripId, navigate });
+    else if (choice === 'template') saveTemplateDialog({ store, tripId });
     else if (choice === 'edit') navigate(`/trip/${tripId}/edit`);
     else if (choice === 'dup') {
       const copy = store.duplicateTrip(tripId);
@@ -68,28 +94,64 @@ export function ChecklistScreen(ctx) {
     }
   }
 
+  // ------------------------------------------------------------ drag reorder
+  function startDrag(e, li, ul) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    li.classList.add('is-dragging');
+    // Listen on the document: moving the row in the DOM would drop pointer capture on the handle.
+    const onMove = (ev) => {
+      const rest = [...ul.children].filter((x) => x !== li);
+      const before = rest.find((sib) => {
+        const r = sib.getBoundingClientRect();
+        return ev.clientY < r.top + r.height / 2;
+      });
+      if ((before || null) !== li.nextElementSibling) ul.insertBefore(li, before || null);
+    };
+    const finish = (commit) => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      li.classList.remove('is-dragging');
+      if (commit) store.reorderItems([...ul.children].map((x) => x.dataset.id));
+      else ctx.refresh();
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
+  }
+
   function removeItem(item) {
     const removed = store.deleteItem(item.id);
     if (removed) toast(`Removed “${removed.name}”`, { action: { label: 'Undo', run: () => store.restoreItem(removed) } });
   }
 
-  function itemRow(item, bags) {
+  function itemRow(item, bags, reorder) {
     const done = isItemPacked(item);
     const state = done ? true : item.packed > 0 ? 'mixed' : false;
     const bag = bags.find((b) => b.id === item.bagId);
     const meta = [bag?.name, item.target > 1 ? `${item.packed}/${item.target} packed` : '', item.priority === 'high' ? 'High priority' : '', item.notes ? 'Has note' : ''].filter(Boolean).join(' · ');
-    return h(
+    const lead = selecting
+      ? h('input', { type: 'checkbox', class: 'check', 'aria-label': `Select ${item.name}`, checked: selected.has(item.id), 'data-key': `sel-${item.id}`, onChange: (e) => { if (e.target.checked) selected.add(item.id); else selected.delete(item.id); ctx.refresh(); } })
+      : checkbox({ state, label: `${item.name}: ${done ? 'packed' : 'not packed'}`, onChange: () => store.togglePacked(item.id), key: `chk-${item.id}` });
+    const row = h(
       'li',
-      { class: `item-row${done ? ' is-packed' : ''}` },
-      checkbox({ state, label: `${item.name}: ${done ? 'packed' : 'not packed'}`, onChange: () => store.togglePacked(item.id), key: `chk-${item.id}` }),
+      { class: `item-row${done ? ' is-packed' : ''}${item.essential && !done ? ' is-essential-open' : ''}`, 'data-id': item.id },
+      reorder
+        ? h('button', { type: 'button', class: 'drag-handle', 'data-key': `drag-${item.id}`, 'aria-label': `Reorder ${item.name}. Drag, or press Alt plus Up or Down arrow.`, title: 'Drag to reorder', onPointerdown: (e) => startDrag(e, row, row.parentElement), onKeydown: (e) => { if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); store.moveItemOrder(item.id, e.key === 'ArrowUp' ? -1 : 1); } } }, icon('grip', { size: 16 }))
+        : null,
+      lead,
       h(
         'button',
         { type: 'button', class: 'item-main', 'data-key': `edit-${item.id}`, 'aria-label': `Edit ${item.name}`, onClick: () => itemDialog({ store, tripId, item }) },
         h('span', { class: 'item-name' }, item.name, item.essential ? h('span', { class: 'badge-essential', title: 'Essential' }, icon('star', { size: 12 }), h('span', { class: 'sr-only', text: 'Essential' })) : null),
         meta ? h('span', { class: 'item-meta', text: meta }) : null,
       ),
-      stepper({ value: item.target, min: 1, max: LIMITS.maxQty, label: item.name, key: `qty-${item.id}`, onChange: (n) => store.setTarget(item.id, n) }),
+      selecting ? null : stepper({ value: item.target, min: 1, max: LIMITS.maxQty, label: item.name, key: `qty-${item.id}`, onChange: (n) => store.setTarget(item.id, n) }),
     );
+    return row;
   }
 
   function categoryCard(cat, items, allItems, bags) {
@@ -97,7 +159,8 @@ export function ChecklistScreen(ctx) {
     const q = categoryProgress(allItems, cat);
     const open = !collapsed.has(cat);
     const bodyId = `cat-${cat.replace(/\W/g, '_')}`;
-    const quick = quickCategory === cat;
+    const quick = quickCategory === cat && !selecting;
+    const reorder = canReorder();
     return h(
       'section',
       { class: 'card category-card', 'aria-label': meta.label },
@@ -113,18 +176,40 @@ export function ChecklistScreen(ctx) {
         ? h(
             'div',
             { class: 'category-body', id: bodyId },
-            h('ul', { class: 'item-list' }, items.map((i) => itemRow(i, bags))),
-            quick
-              ? h(
-                  'form',
-                  { class: 'quick-add', onSubmit: (e) => { e.preventDefault(); const input = e.target.elements.name; const v = input.value.trim(); if (!v) return; store.addItem(tripId, { name: v, category: cat, target: 1 }); } },
-                  h('input', { type: 'text', name: 'name', maxlength: LIMITS.itemName, placeholder: `Add to ${meta.label}…`, 'aria-label': `New ${meta.label} item`, 'data-key': `quick-${cat}`, autocomplete: 'off', onKeydown: (e) => { if (e.key === 'Escape') { quickCategory = null; ctx.refresh(); } } }),
-                  button({ label: 'Add', variant: 'primary', type: 'submit' }),
-                  button({ label: 'Done', variant: 'ghost', onClick: () => { quickCategory = null; ctx.refresh(); } }),
-                )
-              : h('button', { type: 'button', class: 'add-inline', 'data-key': `add-${cat}`, onClick: () => { quickCategory = cat; ctx.refresh(); } }, icon('plus', { size: 16 }), 'Add item'),
+            h('ul', { class: 'item-list' }, items.map((i) => itemRow(i, bags, reorder))),
+            selecting
+              ? null
+              : quick
+                ? h(
+                    'form',
+                    { class: 'quick-add', onSubmit: (e) => { e.preventDefault(); const input = e.target.elements.name; const v = input.value.trim(); if (!v) return; store.addItem(tripId, { name: v, category: cat, target: 1 }); } },
+                    h('input', { type: 'text', name: 'name', maxlength: LIMITS.itemName, placeholder: `Add to ${meta.label}…`, 'aria-label': `New ${meta.label} item`, 'data-key': `quick-${cat}`, autocomplete: 'off', onKeydown: (e) => { if (e.key === 'Escape') { quickCategory = null; ctx.refresh(); } } }),
+                    button({ label: 'Add', variant: 'primary', type: 'submit' }),
+                    button({ label: 'Done', variant: 'ghost', onClick: () => { quickCategory = null; ctx.refresh(); } }),
+                  )
+                : h('button', { type: 'button', class: 'add-inline', 'data-key': `add-${cat}`, onClick: () => { quickCategory = cat; ctx.refresh(); } }, icon('plus', { size: 16 }), 'Add item'),
           )
         : null,
+    );
+  }
+
+  // ---------------------------------------------------------------- bulk bar
+  function bulkBar(visible, bags) {
+    const ids = [...selected].filter((id) => visible.some((i) => i.id === id));
+    const n = ids.length;
+    const bagSel = selectInput({ options: [{ id: '', label: 'Move to bag…' }, ...bags.map((b) => ({ id: b.id, label: b.name }))], value: '', name: 'bulkBag' });
+    bagSel.setAttribute('aria-label', 'Move selected items to bag');
+    bagSel.disabled = n === 0;
+    bagSel.addEventListener('change', (e) => { if (e.target.value) { const moved = store.bulkUpdate(ids, { bagId: e.target.value }); toast(`Moved ${plural(moved, 'item')}`, { tone: 'success' }); } });
+    const catSel = selectInput({ options: [{ id: '', label: 'Category…' }, ...CATEGORY_PRESETS.map((c) => ({ id: c.id, label: c.label }))], value: '', name: 'bulkCat' });
+    catSel.setAttribute('aria-label', 'Change category of selected items');
+    catSel.disabled = n === 0;
+    catSel.addEventListener('change', (e) => { if (e.target.value) store.bulkUpdate(ids, { category: e.target.value }); });
+    return h(
+      'div',
+      { class: 'bulk-bar', role: 'region', 'aria-label': 'Bulk actions' },
+      h('div', { class: 'bulk-row' }, h('strong', { class: 'bulk-count', 'aria-live': 'polite', text: n ? `${n} selected` : 'Select items' }), button({ label: 'All', variant: 'ghost', onClick: () => { visible.forEach((i) => selected.add(i.id)); ctx.refresh(); }, key: 'bulk-all' }), button({ label: 'None', variant: 'ghost', onClick: () => { selected.clear(); ctx.refresh(); }, key: 'bulk-none' }), h('span', { class: 'spacer' }), button({ label: 'Done', variant: 'secondary', onClick: () => { selecting = false; selected.clear(); ctx.refresh(); }, key: 'bulk-done' })),
+      h('div', { class: 'bulk-row' }, button({ label: 'Packed', icon: 'check', variant: 'secondary', disabled: n === 0, onClick: () => store.bulkUpdate(ids, { packed: 'all' }), key: 'bulk-pack' }), button({ label: 'Unpack', icon: 'restore', variant: 'secondary', disabled: n === 0, onClick: () => store.bulkUpdate(ids, { packed: 'none' }), key: 'bulk-unpack' }), bagSel, catSel, button({ label: 'Delete', icon: 'trash', variant: 'danger-ghost', disabled: n === 0, key: 'bulk-delete', onClick: () => { const removed = store.bulkDelete(ids); selected.clear(); toast(`Removed ${plural(removed.length, 'item')}`, { action: { label: 'Undo', run: () => store.restoreItems(removed) } }); } })),
     );
   }
 
@@ -138,12 +223,15 @@ export function ChecklistScreen(ctx) {
       const all = tripItems(state, tripId);
       const q = sumQty(all);
       const visible = all.filter(matches);
+      for (const id of [...selected]) if (!all.some((i) => i.id === id)) selected.delete(id);
 
       const counts = { all: all.length, topack: all.filter((i) => !isItemPacked(i)).length, packed: all.filter(isItemPacked).length, essential: all.filter((i) => i.essential).length };
+      const essLeft = essentialsLeft(all);
 
       // group by category, presets first in their canonical order
       const order = [...CATEGORY_PRESETS.map((c) => c.id), ...[...new Set(all.map((i) => i.category))].filter((c) => !CATEGORY_PRESETS.some((p) => p.id === c)).sort((a, b) => a.localeCompare(b))];
-      const groups = order.map((cat) => [cat, visible.filter((i) => i.category === cat).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))]).filter(([cat, items]) => items.length || (quickCategory === cat && all.some((i) => i.category === cat)));
+      const cmp = sorter();
+      const groups = order.map((cat) => [cat, visible.filter((i) => i.category === cat).sort(cmp)]).filter(([cat, items]) => items.length || (quickCategory === cat && all.some((i) => i.category === cat)));
 
       const list = all.length === 0
         ? emptyState({ title: 'Your list is empty', text: 'Add the first item to start packing.', action: button({ label: 'Add item', icon: 'plus', variant: 'primary', onClick: () => itemDialog({ store, tripId }) }) })
@@ -153,16 +241,22 @@ export function ChecklistScreen(ctx) {
 
       const complete = q.target > 0 && q.packed === q.target;
 
+      const sortSel = selectInput({ options: SORTS, value: sortBy, name: 'sortBy' });
+      sortSel.setAttribute('aria-label', 'Sort items');
+      sortSel.dataset.key = 'sort-by';
+      sortSel.addEventListener('change', (e) => { sortBy = e.target.value; ctx.refresh(); });
+
       const main = h(
         'div',
         { class: 'checklist-main' },
-        pageHeader({ title: trip.name, subtitle: tripSubtitle(trip), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
+        pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
         h('section', { class: 'card summary-card hide-desktop', 'aria-label': 'Packing summary' }, h('div', { class: 'row-between' }, h('strong', { text: 'Packed' }), h('strong', { class: 'pct', text: `${q.percent}%` })), progressBar(q.percent, { label: 'Packing progress' }), h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items${bags.length > 1 ? ` · ${plural(bags.length, 'bag')}` : ''}` })),
-        complete ? h('div', { class: 'banner banner-success' }, icon('check', { size: 18 }), h('span', { text: 'Everything is packed!' }), h('a', { class: 'link', href: `#/trip/${tripId}/summary`, text: 'View summary' })) : null,
-        h('div', { class: 'toolbar' }, search, bags.length > 1 ? bagSelect(bags) : null),
-        h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter items' }, FILTERS.map(([id, label]) => chip({ label, count: counts[id], active: filter === id, key: `flt-${id}`, onClick: () => { filter = id; ctx.refresh(); } }))),
-        button({ label: 'Add item', icon: 'plus', variant: 'secondary', className: 'btn-block hide-mobile-add', onClick: () => itemDialog({ store, tripId }), key: 'add-main' }),
+        complete ? h('div', { class: 'banner banner-success' }, icon('check', { size: 18 }), h('span', { text: 'Everything is packed!' }), h('a', { class: 'link', href: `#/trip/${tripId}/summary`, text: 'View summary' })) : essLeft.length ? h('div', { class: 'banner banner-warn essentials-banner' }, icon('star', { size: 18 }), h('span', { text: `${plural(essLeft.length, 'essential')} still to pack` }), h('button', { type: 'button', class: 'link-btn', text: 'Show', onClick: () => { filter = 'essential'; ctx.refresh(); } })) : null,
+        h('div', { class: 'toolbar' }, search, bags.length > 1 ? bagSelect(bags) : null, sortSel),
+        h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter items' }, FILTERS.map(([id, label]) => chip({ label, count: counts[id], active: filter === id, key: `flt-${id}`, onClick: () => { filter = id; ctx.refresh(); } })), chip({ label: selecting ? 'Selecting' : 'Select', active: selecting, key: 'flt-select', onClick: () => { selecting = !selecting; selected.clear(); ctx.refresh(); } })),
+        selecting ? null : button({ label: 'Add item', icon: 'plus', variant: 'secondary', className: 'btn-block hide-mobile-add', onClick: () => itemDialog({ store, tripId }), key: 'add-main' }),
         list,
+        selecting ? bulkBar(visible, bags) : null,
       );
 
       const panel = h(
@@ -176,6 +270,7 @@ export function ChecklistScreen(ctx) {
           h('ul', { class: 'bag-list' }, bags.map((b) => { const p = bagProgress(all, b.id); return h('li', {}, h('div', { class: 'row-between' }, h('span', { class: 'bag-name' }, icon(BAG_KINDS.find((k) => k.id === b.kind)?.icon || 'box', { size: 16 }), b.name), h('span', { class: 'muted small', text: `${p.packed}/${p.target}` })), progressBar(p.percent, { label: `${b.name} progress` })); })),
         ),
         essentialPanel(all),
+        button({ label: 'Open Packing Studio', icon: 'luggage', variant: 'secondary', href: `#/trip/${tripId}/studio`, className: 'btn-block' }),
       );
 
       return h('div', { class: 'screen checklist-layout' }, main, panel);
@@ -252,6 +347,8 @@ export function itemDialog({ store, tripId, item, defaultCategory }) {
           { class: 'dialog-actions' },
           item ? button({ label: 'Delete', icon: 'trash', variant: 'danger-ghost', onClick: () => { const removed = store.deleteItem(item.id); close(true); if (removed) toast(`Removed “${removed.name}”`, { action: { label: 'Undo', run: () => store.restoreItem(removed) } }); } }) : null,
           item ? button({ label: 'Duplicate', icon: 'copy', variant: 'ghost', onClick: () => { store.duplicateItem(item.id); close(true); } }) : null,
+          item ? button({ label: 'Move up', icon: 'arrowU', variant: 'ghost', ariaLabel: `Move ${item.name} up in its category`, onClick: () => { store.moveItemOrder(item.id, -1); close(true); } }) : null,
+          item ? button({ label: 'Move down', icon: 'arrowD', variant: 'ghost', ariaLabel: `Move ${item.name} down in its category`, onClick: () => { store.moveItemOrder(item.id, 1); close(true); } }) : null,
           h('span', { class: 'spacer' }),
           button({ label: 'Cancel', variant: 'ghost', onClick: () => close() }),
           button({ label: item ? 'Save' : 'Add item', variant: 'primary', type: 'submit' }),

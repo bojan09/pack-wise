@@ -2,7 +2,7 @@
 
 A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScript (ES modules) — no framework, no build step, no backend, no account, no tracking. Installable as a PWA.
 
-> **Status:** Phase 1 of 3 (foundation & reliable MVP). The signature pseudo-3D Packing Studio arrives in Phase 2; polish and customization in Phase 3. See `docs/DEVELOPMENT_HANDOFF.md`.
+> **Status:** Phase 2 of 3 (smart travel + interactive Packing Studio). Polish, rich customization and release hardening arrive in Phase 3. See `docs/DEVELOPMENT_HANDOFF.md`.
 
 ## What works today
 
@@ -14,6 +14,15 @@ A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScrip
 - Trip summary that reports honestly what is and isn't done
 - Settings: light/dark/system theme, accent colors, name, JSON export/import (validate → preview → merge or replace), clear data
 - PWA: manifest, icons, versioned service-worker precache, offline use, update prompt that never interrupts an edit
+
+## Added in Phase 2
+
+- **Packing Studio** (`#/trip/:id/studio`): layered pseudo-3D suitcase (CSS perspective, no WebGL). Open/close lid, rotate presets + drag, zoom, bag switcher, tray → case pack animation, tappable contents, synchronized item tiles. Everything is also operable from the list below the stage and by keyboard.
+- Checklist: drag reorder (plus Alt+Arrow and dialog buttons), bulk select (pack, unpack, move bag, category, delete + undo), sort by priority/name, essentials highlighting.
+- Templates: six built-ins, save any trip as a template, edit quantities, build trips from a template or by copying a previous trip.
+- Smarter offline rules: trip length, travelers, bag type and optional climate.
+- Return-trip mode: a separate checklist for the journey home; the original trip is never changed.
+- Dashboard readiness chip; dismissible companion tips (mutable); motion setting (Reduced / Standard / Enhanced; the OS setting always wins); removable sample trip.
 
 ## Run it
 
@@ -72,4 +81,5 @@ Browsers can evict site data (low disk space, "clear site data", some private mo
 
 - Starter lists are generic suggestions, not weather, airline-allowance, safety or volume advice.
 - Packing progress tracks your own checklist, nothing physical.
-- Phase 1 has no drag-reorder, bulk select, templates, return-trip mode or Packing Studio; those are scheduled in Phases 2–3.
+- The Packing Studio is an illustration of your checklist, not a physical simulation: a full case does not mean items fit.
+- Not yet: backgrounds, haptics, text/print export and install help (Phase 3).

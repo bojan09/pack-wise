@@ -12,7 +12,12 @@ export const ACCENTS = [
   { id: 'pink', label: 'Pink', accent: '#E8749F', strong: '#B03A69' },
 ];
 
-const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '' };
+const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [] };
+export const MOTION_LEVELS = [
+  { id: 'reduced', label: 'Reduced' },
+  { id: 'standard', label: 'Standard' },
+  { id: 'enhanced', label: 'Enhanced' },
+];
 
 let memory = { ...DEFAULTS };
 const listeners = new Set();
@@ -35,6 +40,9 @@ function sanitize(p) {
   if (typeof p?.name === 'string') out.name = p.name.replace(/[\u0000-\u001F]/g, '').trim().slice(0, 40);
   out.onboarded = p?.onboarded === true;
   if (typeof p?.lastTripId === 'string') out.lastTripId = p.lastTripId.slice(0, 64);
+  out.companion = p?.companion !== false;
+  if (MOTION_LEVELS.some((m) => m.id === p?.motion)) out.motion = p.motion;
+  if (Array.isArray(p?.dismissed)) out.dismissed = p.dismissed.filter((x) => typeof x === 'string').map((x) => x.slice(0, 100)).slice(-200);
   return out;
 }
 
@@ -60,8 +68,20 @@ export const onPrefsChange = (fn) => {
   return () => listeners.delete(fn);
 };
 
+/** Effective motion level: the OS reduced-motion setting always wins over the in-app choice. */
+export function effectiveMotion(prefs = getPrefs()) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 'reduced';
+  return prefs.motion;
+}
+
+export function dismissTip(id) {
+  const cur = getPrefs().dismissed;
+  if (!cur.includes(id)) setPrefs({ dismissed: [...cur, id] });
+}
+
 export function applyPrefs(prefs = getPrefs()) {
   const root = document.documentElement;
+  root.setAttribute('data-motion', effectiveMotion(prefs));
   if (prefs.theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', prefs.theme);
   const accent = ACCENTS.find((a) => a.id === prefs.accent) || ACCENTS[0];

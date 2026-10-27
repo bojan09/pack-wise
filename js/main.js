@@ -14,7 +14,9 @@ import { TripsScreen } from './screens/trips.js';
 import { TripFormScreen } from './screens/tripForm.js';
 import { ChecklistScreen } from './screens/checklist.js';
 import { TasksRedirectScreen, TasksScreen } from './screens/tasks.js';
-import { PackRedirectScreen } from './screens/pack.js';
+import { PackRedirectScreen, StudioRedirectScreen } from './screens/pack.js';
+import { StudioScreen } from './screens/studio.js';
+import { TemplatesScreen } from './screens/templates.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SettingsScreen } from './screens/settings.js';
 import { WelcomeScreen } from './screens/welcome.js';
@@ -23,6 +25,8 @@ const NAV = [
   { id: 'home', href: '#/', short: 'Home', long: 'Dashboard', icon: 'home' },
   { id: 'trips', href: '#/trips', short: 'Trips', long: 'My Trips', icon: 'suitcase' },
   { id: 'pack', href: '#/pack', short: 'Pack', long: 'Packing List', icon: 'pack' },
+  { id: 'studio', href: '#/studio', short: 'Studio', long: 'Packing Studio', icon: 'luggage', desktopOnly: true },
+  { id: 'templates', href: '#/templates', short: 'Templates', long: 'Templates', icon: 'template', desktopOnly: true },
   { id: 'tasks', href: '#/tasks', short: 'Tasks', long: 'Travel Tasks', icon: 'tasks' },
   { id: 'more', href: '#/settings', short: 'More', long: 'Settings', icon: 'more' },
 ];
@@ -59,7 +63,7 @@ function buildShell() {
     'nav',
     { class: 'nav', 'aria-label': 'Main' },
     h('a', { class: 'nav-brand', href: '#/', 'aria-label': 'PackWise home' }, logoMark({ size: 34 }), h('span', {}, 'Pack', h('b', { text: 'Wise' }))),
-    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', {}, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 22 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
+    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 22 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
     h('div', { class: 'nav-foot' }, destinationArt('beach', { className: 'nav-foot-art' }), h('p', { text: 'Collect trips, not things.' })),
   );
   const banners = h('div', { class: 'banners' });
@@ -108,6 +112,9 @@ async function boot() {
     { path: '/trip/:id/edit', name: 'trip-edit', nav: 'trips', screen: (c) => TripFormScreen(c, { mode: 'edit' }) },
     { path: '/trip/:id/tasks', name: 'tasks', nav: 'tasks', screen: TasksScreen },
     { path: '/trip/:id/summary', name: 'summary', nav: 'pack', screen: SummaryScreen },
+    { path: '/trip/:id/studio', name: 'studio', nav: 'studio', screen: StudioScreen },
+    { path: '/templates', name: 'templates', nav: 'templates', screen: TemplatesScreen },
+    { path: '/studio', name: 'studio-home', nav: 'studio', screen: StudioRedirectScreen },
     { path: '/pack', name: 'pack', nav: 'pack', screen: PackRedirectScreen },
     { path: '/tasks', name: 'tasks-home', nav: 'tasks', screen: TasksRedirectScreen },
     { path: '/settings', name: 'settings', nav: 'more', screen: SettingsScreen },

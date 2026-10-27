@@ -42,16 +42,21 @@ async function seed(page) {
 }
 
 for (const [label, viewport, shots] of [
-  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'tasks', 'summary', 'settings']],
-  ['1440x900', { width: 1440, height: 900 }, ['dashboard', 'checklist', 'trips', 'settings']],
+  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'studio', 'templates', 'tasks', 'summary', 'settings']],
+  ['1440x900', { width: 1440, height: 900 }, ['dashboard', 'checklist', 'studio', 'templates', 'trips', 'settings']],
 ]) {
   const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
   const page = await ctx.newPage();
   const id = await seed(page);
-  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips' };
+  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips', studio: `/trip/${id}/studio`, templates: '/templates' };
   for (const name of shots) {
     await page.goto(`${base}#${routes[name]}`);
     await page.waitForTimeout(500);
+    if (name === 'studio') {
+      const second = await page.$$eval('select[name=bag] option', (o) => o[1]?.value);
+      if (second) await page.selectOption('select[name=bag]', second);
+      await page.waitForTimeout(700);
+    }
     await page.screenshot({ path: join(out, `${label}-${name}.png`) });
   }
   await ctx.close();

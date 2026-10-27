@@ -8,23 +8,26 @@ import {
   makeBag,
   makeItem,
   makeTask,
+  makeTemplate,
   makeTrip,
   newId,
   normalizeBag,
   normalizeItem,
   normalizeTask,
+  normalizeTemplate,
   normalizeTrip,
   nowIso,
   clampInt,
 } from './models.js';
 import { migrate } from './migrations.js';
-import { bagForCategory, defaultDays, generatePackingList, generateTasks } from './templates.js';
+import { bagForCategory, defaultDays, generatePackingList, generateReturnTasks, generateTasks } from './templates.js';
 import { remapCollisions, BACKUP_APP } from './validate.js';
 import { tripBags, tripItems, tripTasks } from './selectors.js';
 import { tripLengthDays } from './progress.js';
 import { describeStorageError } from './storage/idb.js';
 
 const COLLECTIONS = ['trips', 'bags', 'items', 'tasks', 'templates'];
+const normalizeCategoryOf = (g) => String(g.category || 'misc').toLowerCase();
 
 export function createStore(adapter) {
   const state = { trips: [], bags: [], items: [], tasks: [], templates: [], loaded: false, saveError: null };
@@ -80,7 +83,12 @@ export function createStore(adapter) {
   const nextOrder = (list) => list.reduce((m, r) => Math.max(m, r.order ?? 0), -1) + 1;
 
   // ---------------------------------------------------------------- trips
-  function createTrip(fields, { bagKinds = ['carry-on'], generate = true, withTasks = true } = {}) {
+  /**
+   * @param {object} fields trip fields
+   * @param {{bagKinds?: string[], generate?: boolean, withTasks?: boolean, templateItems?: object[], copyFrom?: string}} [opts]
+   *   templateItems: use these items instead of the rules. copyFrom: copy items + tasks (unpacked) from an earlier trip.
+   */
+  function createTrip(fields, { bagKinds = ['carry-on'], generate = true, withTasks = true, templateItems = null, copyFrom = '' } = {}) {
     const trip = makeTrip(fields);
     if (!trip) return null;
     const kinds = bagKinds.length ? bagKinds : ['carry-on'];
@@ -88,14 +96,20 @@ export function createStore(adapter) {
       makeBag({ tripId: trip.id, kind, order, name: BAG_KINDS.find((k) => k.id === kind)?.label ?? 'Bag' }),
     );
     const days = tripLengthDays(trip) || defaultDays(trip.type);
-    const items = generate
-      ? generatePackingList({ type: trip.type, days }).map((g, order) =>
-          makeItem({ ...g, order, tripId: trip.id, bagId: bagForCategory(g.category, bags) }),
-        )
-      : [];
-    const tasks = withTasks
-      ? generateTasks({ transport: trip.transport }).map((g, order) => makeTask({ ...g, order, tripId: trip.id }))
-      : [];
+    const source = copyFrom ? find('trips', copyFrom) : null;
+    let seeds = [];
+    let tasks = [];
+    if (source) {
+      seeds = tripItems(state, source.id).sort((a, b) => a.order - b.order);
+      tasks = tripTasks(state, source.id).map((t, order) => makeTask({ ...t, order, tripId: trip.id, done: false }));
+    } else {
+      if (templateItems) seeds = templateItems;
+      else if (generate) seeds = generatePackingList({ type: trip.type, days, travelers: trip.travelers, bagKinds: kinds, climate: trip.climate });
+      if (withTasks) tasks = generateTasks({ transport: trip.transport }).map((g, order) => makeTask({ ...g, order, tripId: trip.id }));
+    }
+    const items = seeds
+      .map((g, order) => makeItem({ category: g.category, name: g.name, target: g.target, essential: g.essential, priority: g.priority, notes: g.notes, order, tripId: trip.id, bagId: bagForCategory(normalizeCategoryOf(g), bags), packed: 0 }))
+      .filter(Boolean);
     commit({ put: { trips: [trip], bags, items, tasks } });
     return trip;
   }
@@ -270,6 +284,167 @@ export function createStore(adapter) {
     return norm;
   }
 
+  // ------------------------------------------------- ordering & bulk edits
+  const displayOrder = (a, b) => a.order - b.order || a.name.localeCompare(b.name);
+
+  /** Persist a new manual order for the given items (all in one category). Other items keep their order. */
+  function reorderItems(orderedIds) {
+    const recs = orderedIds.map((id) => find('items', id)).filter(Boolean);
+    if (recs.length < 2) return false;
+    const slots = recs.map((r) => r.order).sort((a, b) => a - b);
+    // slots can collide (equal orders after imports); spread them so every position is unique
+    const unique = slots.every((v, i) => i === 0 || v > slots[i - 1]) ? slots : slots.map((_, i) => slots[0] + i);
+    const changed = [];
+    recs.forEach((r, i) => {
+      if (r.order !== unique[i]) changed.push({ ...touch(r), order: unique[i] });
+    });
+    if (!changed.length) return false;
+    commit({ put: { items: changed } });
+    return true;
+  }
+
+  /** Move an item one position up (-1) or down (+1) within its category. */
+  function moveItemOrder(id, delta) {
+    const cur = find('items', id);
+    if (!cur) return false;
+    const group = tripItems(state, cur.tripId).filter((i) => i.category === cur.category).sort(displayOrder);
+    const from = group.findIndex((i) => i.id === id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= group.length) return false;
+    const ids = group.map((i) => i.id);
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    return reorderItems(ids);
+  }
+
+  /**
+   * One atomic update over several items. patch keys: bagId, category, priority, essential,
+   * and packed: 'all' | 'none'. Unknown bags are ignored; invariants hold via normalizeItem.
+   */
+  function bulkUpdate(ids, patch) {
+    const out = [];
+    for (const id of ids) {
+      const cur = find('items', id);
+      if (!cur) continue;
+      const merged = { ...touch(cur) };
+      if (patch.bagId && tripBags(state, cur.tripId).some((b) => b.id === patch.bagId)) merged.bagId = patch.bagId;
+      if (patch.category) merged.category = patch.category;
+      if (patch.priority) merged.priority = patch.priority;
+      if (typeof patch.essential === 'boolean') merged.essential = patch.essential;
+      if (patch.packed === 'all') merged.packed = cur.target;
+      if (patch.packed === 'none') merged.packed = 0;
+      const next = normalizeItem(merged);
+      if (next) out.push(next);
+    }
+    if (out.length) commit({ put: { items: out } });
+    return out.length;
+  }
+
+  /** Deletes several items; returns the removed records so the UI can offer Undo. */
+  function bulkDelete(ids) {
+    const removed = ids.map((id) => find('items', id)).filter(Boolean);
+    if (removed.length) commit({ remove: { items: removed.map((r) => r.id) } });
+    return removed;
+  }
+
+  function restoreItems(items) {
+    return items.map((i) => restoreItem(i)).filter(Boolean).length;
+  }
+
+  // ------------------------------------------------------------ templates
+  function addTemplate({ name, type = 'custom', items = [] }) {
+    const t = makeTemplate({ name, type, items });
+    if (!t) return null;
+    commit({ put: { templates: [t] } });
+    return t;
+  }
+
+  function updateTemplate(id, patch) {
+    const cur = find('templates', id);
+    if (!cur) return null;
+    const next = normalizeTemplate({ ...cur, ...patch, id, createdAt: cur.createdAt });
+    if (!next) return null;
+    commit({ put: { templates: [next] } });
+    return next;
+  }
+
+  function deleteTemplate(id) {
+    if (!find('templates', id)) return false;
+    commit({ remove: { templates: [id] } });
+    return true;
+  }
+
+  /** Snapshot a trip's list (names, categories, quantities, essentials) as a reusable template. */
+  function saveTripAsTemplate(tripId, name) {
+    const trip = find('trips', tripId);
+    if (!trip) return null;
+    const items = tripItems(state, tripId)
+      .sort(displayOrder)
+      .map((i) => ({ category: i.category, name: i.name, target: i.target, essential: i.essential }));
+    return addTemplate({ name: name || `${trip.name} template`, type: trip.type, items });
+  }
+
+  // ---------------------------------------------------------- return trip
+  /**
+   * Journey-home checklist: copies the chosen belongings (unpacked) into a NEW trip linked via
+   * returnOf. The original trip, its packed state and its tasks are not touched.
+   */
+  function createReturnTrip(sourceId, { itemIds, name } = {}) {
+    const src = find('trips', sourceId);
+    if (!src) return null;
+    const trip = makeTrip({
+      name: name || `${src.name} — return`,
+      destination: '',
+      type: src.type,
+      climate: src.climate,
+      travelers: src.travelers,
+      transport: src.transport,
+      startDate: src.endDate || src.startDate,
+      endDate: src.endDate || src.startDate,
+      returnOf: src.id,
+      status: 'active',
+    });
+    if (!trip) return null;
+    const bagMap = new Map();
+    const bags = tripBags(state, sourceId).map((b) => {
+      const nb = makeBag({ ...b, tripId: trip.id });
+      bagMap.set(b.id, nb.id);
+      return nb;
+    });
+    const want = itemIds ? new Set(itemIds) : null;
+    const items = tripItems(state, sourceId)
+      .filter((i) => !want || want.has(i.id))
+      .sort(displayOrder)
+      .map((i, order) => makeItem({ ...i, order, tripId: trip.id, bagId: bagMap.get(i.bagId) || bags[0]?.id || '', packed: 0 }))
+      .filter(Boolean);
+    const tasks = generateReturnTasks().map((g, order) => makeTask({ ...g, order, tripId: trip.id }));
+    commit({ put: { trips: [trip], bags, items, tasks } });
+    return trip;
+  }
+
+  // ------------------------------------------------------------ sample data
+  /** Adds a removable sample trip (isDemo) about three weeks out, roughly 60% packed. */
+  function loadDemo(now = new Date()) {
+    const ymd = (offset) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const trip = createTrip(
+      { name: 'Sample: Lisbon city break', destination: 'Lisbon, Portugal', type: 'city', startDate: ymd(21), endDate: ymd(25), transport: 'flight', travelers: 2, climate: 'mild', isDemo: true },
+      { bagKinds: ['carry-on', 'checked'] },
+    );
+    if (!trip) return null;
+    const items = tripItems(state, trip.id).sort(displayOrder);
+    bulkUpdate(items.filter((_, n) => n % 5 < 3).map((i) => i.id), { packed: 'all' });
+    tripTasks(state, trip.id).slice(0, 2).forEach((t) => toggleTask(t.id));
+    return trip;
+  }
+
+  function removeDemo() {
+    const ids = state.trips.filter((t) => t.isDemo).map((t) => t.id);
+    ids.forEach((id) => deleteTrip(id));
+    return ids.length;
+  }
+
   // ------------------------------------------------------- backup / import
   function exportData() {
     return {
@@ -336,6 +511,18 @@ export function createStore(adapter) {
     toggleTask,
     deleteTask,
     restoreTask,
+    reorderItems,
+    moveItemOrder,
+    bulkUpdate,
+    bulkDelete,
+    restoreItems,
+    addTemplate,
+    updateTemplate,
+    deleteTemplate,
+    saveTripAsTemplate,
+    createReturnTrip,
+    loadDemo,
+    removeDemo,
     exportData,
     importData,
     clearAll,

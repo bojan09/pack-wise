@@ -3,7 +3,7 @@ import { icon } from '../ui/icons.js';
 import { button, segmented, field } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
-import { ACCENTS, getPrefs, setPrefs } from '../prefs.js';
+import { ACCENTS, MOTION_LEVELS, getPrefs, setPrefs } from '../prefs.js';
 import { APP_VERSION } from '../models.js';
 import { downloadBackup, importFromFile } from '../backup.js';
 import { pageHeader } from './shared.js';
@@ -53,6 +53,8 @@ export function SettingsScreen(ctx) {
             h('h2', { class: 'card-title', text: 'Appearance' }),
             h('div', { class: 'setting' }, h('span', { class: 'setting-label', id: 'lbl-theme', text: 'Theme' }), segmented({ name: 'theme', label: 'Theme', value: prefs.theme, options: [{ id: 'light', label: 'Light', icon: 'sun' }, { id: 'dark', label: 'Dark', icon: 'moon' }, { id: 'system', label: 'System', icon: 'monitor' }], onChange: (v) => setPrefs({ theme: v }) })),
             h('div', { class: 'setting' }, h('span', { class: 'setting-label', text: 'Accent color' }), swatches),
+            h('div', { class: 'setting' }, h('span', { class: 'setting-label', text: 'Motion' }), segmented({ name: 'motion', label: 'Motion intensity', value: prefs.motion, options: MOTION_LEVELS, onChange: (v) => setPrefs({ motion: v }) }), h('p', { class: 'muted small', text: 'Your device’s “reduce motion” setting always takes priority.' })),
+            h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', class: 'check', name: 'companion', checked: prefs.companion, onChange: (e) => setPrefs({ companion: e.target.checked }) }), h('span', {}, h('strong', { text: 'Travel companion tips' }), h('span', { class: 'muted small', text: 'Short, dismissible hints. Turn off to hide them everywhere.' }))),
             field({ label: 'Your name (shown in the greeting)', input: name }),
           ),
           h(
@@ -62,6 +64,7 @@ export function SettingsScreen(ctx) {
             h('p', { class: 'muted', text: 'Everything lives in this browser on this device. A backup file is the only reliable way to move it or protect against the browser clearing it.' }),
             h('div', { class: 'btn-row' }, button({ label: 'Export backup', icon: 'download', variant: 'primary', onClick: () => downloadBackup(store), key: 'export' }), button({ label: 'Import backup', icon: 'upload', variant: 'secondary', onClick: () => fileInput.click(), key: 'import' }), fileInput),
             storageInfo,
+            h('div', { class: 'danger-zone sample-zone' }, h('div', {}, h('strong', { text: 'Sample data' }), h('span', { class: 'muted small block', text: 'Add a demo trip to explore PackWise. Remove it any time; your own trips are never touched.' })), h('div', { class: 'btn-row' }, button({ label: 'Add sample trip', icon: 'plus', variant: 'secondary', key: 'demo-add', onClick: () => { store.loadDemo(); toast('Sample trip added.', { tone: 'success' }); } }), button({ label: 'Remove sample data', variant: 'ghost', key: 'demo-remove', onClick: () => { const n = store.removeDemo(); toast(n ? 'Sample data removed.' : 'No sample data to remove.'); } }))),
             h('div', { class: 'danger-zone' }, h('div', {}, h('strong', { text: 'Clear all data' }), h('span', { class: 'muted small block', text: 'Permanently deletes every trip, list and task on this device.' })), button({ label: 'Clear data…', icon: 'trash', variant: 'danger-ghost', key: 'clear', onClick: async () => { const ok = await confirmDialog({ title: 'Delete everything?', message: 'All trips, packing lists and tasks on this device will be permanently deleted. Export a backup first if you might need them.', confirmLabel: 'Delete everything', danger: true }); if (ok) { await store.clearAll(); toast('All data cleared.'); } } })),
           ),
           h(

@@ -1,5 +1,5 @@
 import { h } from '../dom.js';
-import { button, chip, emptyState } from '../ui/components.js';
+import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { actionSheet, confirmDialog, showDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { sortedTrips } from '../selectors.js';
@@ -64,7 +64,7 @@ export function TripsScreen(ctx) {
       return h(
         'div',
         { class: 'screen trips-screen' },
-        pageHeader({ title: 'My Trips', actions: [button({ label: 'New trip', icon: 'plus', variant: 'primary', href: '#/trips/new' })] }),
+        pageHeader({ title: 'My Trips', actions: [button({ label: 'Templates', icon: 'template', variant: 'ghost', href: '#/templates', className: 'hide-mobile' }), iconButton({ icon: 'template', label: 'Templates', href: '#/templates', className: 'hide-desktop-md' }), button({ label: 'New trip', icon: 'plus', variant: 'primary', href: '#/trips/new' })] }),
         h('div', { class: 'toolbar' }, search, h('div', { class: 'chips' }, chip({ label: 'Active', count: counts.active, active: status === 'active', onClick: () => { status = 'active'; ctx.refresh(); }, key: 'f-active' }), chip({ label: 'Archived', count: counts.archived, active: status === 'archived', onClick: () => { status = 'archived'; ctx.refresh(); }, key: 'f-archived' }))),
         list,
       );

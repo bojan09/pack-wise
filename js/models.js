@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
 export const SCHEMA_VERSION = 1;
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -19,6 +19,13 @@ export const TRIP_TYPES = [
   { id: 'camping', label: 'Camping', icon: 'camping', days: 4 },
   { id: 'winter', label: 'Winter', icon: 'winter', days: 6 },
   { id: 'custom', label: 'Custom', icon: 'sliders', days: 4 },
+];
+
+export const CLIMATES = [
+  { id: '', label: 'No preference' },
+  { id: 'warm', label: 'Warm' },
+  { id: 'mild', label: 'Mild / changeable' },
+  { id: 'cold', label: 'Cold' },
 ];
 
 export const TRANSPORTS = [
@@ -66,6 +73,7 @@ export const LIMITS = {
 const ids = (list) => list.map((x) => x.id);
 const TRIP_TYPE_IDS = ids(TRIP_TYPES);
 const TRANSPORT_IDS = ids(TRANSPORTS);
+const CLIMATE_IDS = ids(CLIMATES);
 const BAG_KIND_IDS = ids(BAG_KINDS);
 const PRIORITY_IDS = ids(PRIORITIES);
 const PHASE_IDS = ids(TASK_PHASES);
@@ -150,7 +158,10 @@ export function normalizeTrip(raw) {
     endDate,
     transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
     travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
+    climate: enumOr(raw.climate, CLIMATE_IDS, ''),
     notes: cleanMultiline(raw.notes, LIMITS.notes),
+    returnOf: isId(raw.returnOf) ? raw.returnOf : '', // set on a journey-home trip; points at the original
+    isDemo: raw.isDemo === true, // sample data, removable from Settings
     status: raw.status === 'archived' ? 'archived' : 'active',
     createdAt,
     updatedAt: cleanIso(raw.updatedAt) || createdAt,
@@ -242,4 +253,5 @@ const stamp = () => {
 export const makeTrip = (fields) => normalizeTrip({ ...fields, id: newId(), ...stamp() });
 export const makeBag = (fields) => normalizeBag({ ...fields, id: newId() });
 export const makeItem = (fields) => normalizeItem({ ...fields, id: newId(), ...stamp() });
+export const makeTemplate = (fields) => normalizeTemplate({ ...fields, id: newId(), createdAt: nowIso() });
 export const makeTask = (fields) => normalizeTask({ ...fields, id: newId(), ...stamp() });

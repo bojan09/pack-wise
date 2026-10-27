@@ -85,6 +85,9 @@ export function validateBackup(obj) {
   for (const i of out.items) if (!seen.trips.has(i.tripId)) errors.push(`Item "${i.name}" refers to a missing trip.`);
   if (errors.length) return { ok: false, errors: errors.slice(0, 20), warnings };
 
+  // A return-trip link to a trip that is not in the file is dropped, not rejected.
+  for (const t of out.trips) if (t.returnOf && !seen.trips.has(t.returnOf)) t.returnOf = '';
+
   // Items whose bag is missing or belongs to another trip are re-homed, not rejected.
   const bagTrip = new Map(out.bags.map((b) => [b.id, b.tripId]));
   const firstBag = new Map();
@@ -125,6 +128,7 @@ export function remapCollisions(data, existing, makeId) {
   };
   const trips = data.trips.map((t) => ({ ...t, id: fresh(t.id) }));
   const tripMap = new Map(data.trips.map((t, i) => [t.id, trips[i].id]));
+  trips.forEach((t) => { if (t.returnOf) t.returnOf = tripMap.get(t.returnOf) ?? t.returnOf; });
   const bags = data.bags.map((b) => ({ ...b, id: fresh(b.id), tripId: tripMap.get(b.tripId) }));
   const bagMap = new Map(data.bags.map((b, i) => [b.id, bags[i].id]));
   const items = data.items.map((i) => ({

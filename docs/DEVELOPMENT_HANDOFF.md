@@ -1,6 +1,6 @@
 # PackWise — development handoff
 
-Last updated: end of **Phase 1** (foundation & reliable MVP). Phases 2 and 3 are not started.
+Last updated: end of **Phase 2** (smart travel + Packing Studio). Phase 3 is not started.
 
 ## Decisions
 
@@ -23,6 +23,33 @@ Last updated: end of **Phase 1** (foundation & reliable MVP). Phases 2 and 3 are
 | Updates | New service worker **waits**; the app shows a "Reload" toast; `skipWaiting` only on that click, and never while a dialog is open | Don't swap code under unsaved edits |
 | Accent colors | Accent (decorative) and accent-strong (white-text-safe ≥4.5:1) are separate tokens | Contrast across all presets |
 
+## Phase 2 decisions
+
+| Area | Decision |
+|---|---|
+| Studio engine | `js/ui/suitcase.js`: CSS 3D box (floor, 4 walls, hinged lid with lining), billboard tokens counter-rotated by `--yaw/--tilt`. It only *reads* store data; flights are cosmetic ghosts animated with WAAPI and always cancellable, so the DOM state is the truth. |
+| Sync | `StudioScreen` is `static` and subscribes to the store itself; `stage.sync()` diffs by item id (stable slots, 24-token cap with "+N more", tray cap 14, tiles paged at 60). |
+| Accessibility | Stage tokens are `aria-hidden`; the tile list, tray buttons and info card are the equivalent controls. Stage is a focusable group (arrows rotate, +/- zoom, Space lid, Home reset). |
+| Motion | `prefs.motion` + OS `prefers-reduced-motion` → `data-motion` on `<html>`; `effectiveMotion()` gates flights, settle/hop animations and lid/camera transitions. |
+| Schema | Still `SCHEMA_VERSION = 1`: new fields are optional with defaults (`trip.climate`, `trip.returnOf`, `trip.isDemo`; `templates` store now used). Imports drop dangling `returnOf`; merge remaps it with the ids. |
+| Templates | Built-ins are named presets of the same pure rules (`BUILTIN_TEMPLATES`); user templates store item snapshots. Creating a trip copies items, so later template edits never alter trips. |
+| Return trip | `store.createReturnTrip` copies chosen items unpacked into a new linked trip with its own tasks; original items/tasks are untouched (unit + e2e tested). |
+| Reorder | `reorderItems` reassigns the existing `order` slots (spreading ties); drag uses document-level pointer listeners (DOM moves drop pointer capture). Disabled while filtering/searching/selecting. |
+| Companion | `js/companion.js` is pure: ordered rules, stable message ids, dismissed ids in prefs. No AI claims. |
+
+## Verified in Phase 2 (this environment, Chromium only)
+
+- `npm test`: **35/35** unit tests (adds ordering, bulk, templates, copy-trip, return trip, readiness, companion, demo data, backup round-trip of new fields).
+- `npm run test:e2e`: **41/41** (adds: studio/tray/case/tile/checklist sync, bag switch, rapid taps, leaving mid-animation, trip switching, camera buttons/keyboard/drag, lid, selection, motion levels incl. OS override, 150-item legibility caps, 500-item performance (checklist ≈0.4 s, studio ≈0.1 s here), reorder by drag/keyboard/dialog, bulk ops, templates + copy trip + climate, return trip, companion + readiness, sample data, new-field backup, offline studio; studio/templates added to the accessible-name and 5-viewport overflow sweeps).
+
+## Phase 2 known gaps
+
+- Chromium only; Safari/iOS handling of `preserve-3d` with `backface-visibility`, touch drag and haptics are **unverified**. Mobile devices were not tested; only emulated viewports.
+- Pinch-zoom on touch is not implemented (zoom button, keyboard, ctrl+wheel are).
+- Camera presets/yaw are remembered per session only.
+- Performance numbers are from a headless container, not mid-range phones.
+- Still pending from the spec: backgrounds, haptics toggle, text/print export, install help, quota-recovery UX (Phase 3).
+
 ## Verified in Phase 1 (this environment)
 
 - `npm test`: **22/22** unit tests pass.
@@ -34,16 +61,7 @@ Last updated: end of **Phase 1** (foundation & reliable MVP). Phases 2 and 3 are
 - No Lighthouse or screen-reader (VoiceOver/NVDA/TalkBack) run; a11y is checked structurally (names, roles, focus, overflow), not by assistive technology.
 - Contrast for accent presets was computed by hand for white-on-accent-strong, not machine-audited for every surface/theme.
 - GitHub Pages deployment not performed (instructions in README).
-- Phase 1 intentionally omits: Packing Studio, drag-reorder, bulk select, templates UI, return-trip mode, companion bubbles/reactions, backgrounds/motion levels/haptics settings, text/print export.
-
-## Phase 2 plan (do not start without approval)
-
-1. **Packing Studio** (`js/screens/studio.js`, `js/ui/suitcase.js`, `css/studio.css`): layered SVG/CSS pseudo-3D case (lid, shell, lining, compartment, straps, shadows, stickers); category tokens derived from store state (never mutated by animation); open/close, camera presets/rotate, zoom, bag switcher, tap-token → item focus, synchronized list; summarize large counts; cancellable animations safe under rapid taps / navigation. Add `/studio` route + sidebar entry (desktop design) and "Pack" entry point from the checklist.
-2. Checklist: drag reorder with button/keyboard alternatives (`order` field already exists), bulk select/operations, priority sorting.
-3. Create-trip enhancements: weekend preset, richer rules (travelers, bag type, optional climate), templates (built-in + save custom + copy previous trip) using the existing `templates` store.
-4. Return-trip mode (copy chosen belongings into a separate journey-home list, original untouched), refined readiness/countdown, essentials highlighting.
-5. Companion: rule-based bubbles (first trip, milestones, remaining essentials, completion, return), dismissible, mute preference; blink/reaction animations (blink already exists).
-6. Optional/removable demo data; updated screenshots (`node scripts/screenshots.mjs`); extend unit + e2e suites. Add a motion pref (Reduced/Standard/Enhanced) hook early since Studio depends on it.
+- Phase 1 intentionally omitted what Phase 2 now delivers; backgrounds, haptics and text/print export remain for Phase 3.
 
 ## Phase 3 plan
 

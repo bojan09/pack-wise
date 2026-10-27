@@ -2,7 +2,9 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button, emptyState, progressBar } from '../ui/components.js';
 import { companion, destinationArt } from '../ui/art.js';
-import { essentialsLeft, sumQty, taskProgress } from '../progress.js';
+import { essentialsLeft, readiness, sumQty, taskProgress } from '../progress.js';
+import { companionMessage } from '../companion.js';
+import { companionBubble } from '../ui/bubble.js';
 import { sortedTrips, tripBags, tripItems, tripTasks } from '../selectors.js';
 import { bagProgress } from '../progress.js';
 import { greeting, plural } from '../format.js';
@@ -49,6 +51,8 @@ export function DashboardScreen(ctx) {
         return p.target > 0 && p.packed < p.target;
       }).length;
       const cd = countdown(trip);
+      const ready = readiness({ trip, items, tasks });
+      const tip = companionBubble(companionMessage({ screen: 'dashboard', trip, items, tasks, tripCount: state.trips.length, dismissed: prefs().dismissed }), { onDismiss: ctx.refresh, className: 'dash-bubble' });
       const others = trips.slice(1, 5);
 
       const hero = h(
@@ -56,7 +60,7 @@ export function DashboardScreen(ctx) {
         { class: 'hero', 'aria-label': 'Next trip' },
         destinationArt(trip.type, { className: 'hero-art' }),
         h('div', { class: 'hero-shade' }),
-        h('div', { class: 'hero-text' }, h('h2', { text: trip.name }), h('p', { class: 'hero-dates', text: tripSubtitle(trip) || 'No dates yet' }), trip.destination && trip.destination !== trip.name ? h('p', { class: 'hero-place' }, icon('pin', { size: 14 }), trip.destination) : null),
+        h('div', { class: 'hero-text' }, h('h2', { text: trip.name }), trip.returnOf ? h('p', { class: 'hero-place' }, icon('restore', { size: 14 }), 'Return trip') : null, h('p', { class: 'hero-dates', text: tripSubtitle(trip) || 'No dates yet' }), trip.destination && trip.destination !== trip.name ? h('p', { class: 'hero-place' }, icon('pin', { size: 14 }), trip.destination) : null),
         h(
           'div',
           { class: 'hero-count' },
@@ -70,7 +74,8 @@ export function DashboardScreen(ctx) {
         { class: 'card progress-card', 'aria-label': 'Packing progress' },
         h('div', { class: 'row-between' }, h('h2', { class: 'card-title', text: 'Packing Progress' }), h('strong', { class: 'pct', text: `${q.percent}%` })),
         progressBar(q.percent, { label: 'Packing progress' }),
-        h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items` }),
+        h('div', { class: 'row-between' }, h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items` }), h('span', { class: `ready-chip ready-${ready.level}`, text: ready.label })),
+        ready.reasons.length ? h('p', { class: 'muted small', text: ready.reasons.join(' · ') }) : null,
       );
 
       const stat = (ic, n, label, cls = '') =>
@@ -78,7 +83,7 @@ export function DashboardScreen(ctx) {
 
       const stats = h('div', { class: 'stats' }, stat('box', left, 'Essentials left', 'tone-sand'), stat('alert', tasksLeft, 'Travel tasks left', 'tone-coral'), stat('suitcase', bagsToPack, 'Bags to pack', 'tone-teal hide-mobile'));
 
-      const actions = h('div', { class: 'dash-actions' }, button({ label: 'Continue Packing', icon: 'arrowR', iconAfter: true, variant: 'primary', href: `#/trip/${trip.id}`, className: 'btn-block' }), button({ label: 'View Details', variant: 'secondary', href: `#/trip/${trip.id}/summary`, className: 'hide-mobile' }));
+      const actions = h('div', { class: 'dash-actions' }, button({ label: 'Continue Packing', icon: 'arrowR', iconAfter: true, variant: 'primary', href: `#/trip/${trip.id}`, className: 'btn-block' }), button({ label: 'Studio', icon: 'luggage', variant: 'secondary', href: `#/trip/${trip.id}/studio` }), button({ label: 'View Details', variant: 'secondary', href: `#/trip/${trip.id}/summary`, className: 'hide-mobile' }));
 
       const recent = h(
         'section',
@@ -87,7 +92,7 @@ export function DashboardScreen(ctx) {
         h('div', { class: 'recent-row' }, others.map((t) => tripCard({ trip: t, state, href: `#/trip/${t.id}`, compact: true })), h('a', { class: 'new-trip-tile', href: '#/trips/new' }, icon('plus', { size: 26 }), h('span', { text: 'New Trip' }))),
       );
 
-      return h('div', { class: 'screen dashboard' }, head, h('div', { class: 'dash-grid' }, h('div', { class: 'dash-main' }, hero, h('div', { class: 'dash-side' }, progress, stats, actions)), recent), h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${plural(q.packed, 'item')} of ${q.target} packed` }));
+      return h('div', { class: 'screen dashboard' }, head, tip, h('div', { class: 'dash-grid' }, h('div', { class: 'dash-main' }, hero, h('div', { class: 'dash-side' }, progress, stats, actions)), recent), h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${plural(q.packed, 'item')} of ${q.target} packed` }));
     },
   };
 }

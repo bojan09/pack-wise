@@ -2,14 +2,13 @@
 import { BAG_KINDS, TRIP_TYPES } from './models.js';
 
 const it = (category, name, target = 1, essential = false) => ({ category, name, target, essential });
-
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 export function defaultDays(type) {
   return TRIP_TYPES.find((t) => t.id === type)?.days ?? 5;
 }
 
-const TYPE_EXTRAS = {
+const STYLE_EXTRAS = {
   beach: (d) => [
     it('clothing', 'Swimwear', clamp(Math.ceil(d / 3) + 1, 2, 4)),
     it('clothing', 'Sandals', 1),
@@ -55,24 +54,48 @@ const TYPE_EXTRAS = {
     it('clothing', 'Waterproof boots', 1),
     it('toiletries', 'Lip balm & moisturizer', 1),
   ],
+  weekend: () => [it('misc', 'Light day bag', 1), it('electronics', 'Portable charger', 1), it('clothing', 'One smart-casual outfit', 1)],
   custom: () => [],
 };
 
+/** Optional climate preference nudges the list; never required. */
+const CLIMATE_EXTRAS = {
+  warm: [it('clothing', 'Sun hat', 1), it('toiletries', 'Sunscreen', 1, true), it('misc', 'Sunglasses', 1)],
+  mild: [it('clothing', 'Light rain jacket', 1), it('clothing', 'Layering sweater', 1)],
+  cold: [it('clothing', 'Thermal base layers', 2), it('clothing', 'Gloves', 1), it('clothing', 'Warm hat', 1), it('clothing', 'Scarf', 1)],
+};
+
+/** Built-in templates are named presets of the same rules, so they stay consistent and editable. */
+export const BUILTIN_TEMPLATES = [
+  { id: 'builtin-beach', name: 'Beach holiday', type: 'beach', style: 'beach', days: 7, blurb: 'Swimwear, sun care, light layers' },
+  { id: 'builtin-city', name: 'City break', type: 'city', style: 'city', days: 4, blurb: 'Walking shoes, day bag, power bank' },
+  { id: 'builtin-business', name: 'Business trip', type: 'business', style: 'business', days: 3, blurb: 'Smart clothes, laptop, documents' },
+  { id: 'builtin-camping', name: 'Camping', type: 'camping', style: 'camping', days: 4, blurb: 'Shelter, sleeping gear, safety basics' },
+  { id: 'builtin-winter', name: 'Winter trip', type: 'winter', style: 'winter', days: 6, blurb: 'Warm layers, boots, accessories' },
+  { id: 'builtin-weekend', name: 'Weekend getaway', type: 'custom', style: 'weekend', days: 3, blurb: 'Light and quick: one bag, few extras' },
+];
+
 /**
- * @param {{type?: string, days?: number}} opts
+ * @param {{type?: string, style?: string, days?: number, travelers?: number, bagKinds?: string[], climate?: string}} opts
  * @returns {Array<{category:string,name:string,target:number,essential:boolean}>}
  */
-export function generatePackingList({ type = 'custom', days } = {}) {
+export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], climate = '' } = {}) {
   const d = clamp(Math.round(days || defaultDays(type)), 1, 60);
-  const laundry = d > 10; // longer trips assume laundry, so clothing counts are capped
-  const cap = laundry ? 8 : 12;
+  const compact = bagKinds.length > 0 && bagKinds.every((k) => k === 'backpack' || k === 'carry-on');
+  const carryOnOnly = bagKinds.length > 0 && bagKinds.every((k) => k === 'carry-on');
+  // longer trips assume laundry; small bags force the same assumption
+  const cap = compact ? 6 : d > 10 ? 8 : 12;
+
+  let jacket = 'Jacket';
+  if (climate === 'warm') jacket = 'Light jacket';
+  if (climate === 'cold') jacket = 'Warm jacket';
 
   const base = [
     it('clothing', 'T-shirts', clamp(d, 2, cap)),
     it('clothing', 'Underwear', clamp(d + 1, 3, cap + 2)),
     it('clothing', 'Socks (pairs)', clamp(d + 1, 3, cap + 2)),
-    it('clothing', 'Pants / jeans', clamp(Math.ceil(d / 3), 1, 4)),
-    it('clothing', 'Jacket', 1),
+    it('clothing', 'Pants / jeans', clamp(Math.ceil(d / 3), 1, compact ? 2 : 4)),
+    it('clothing', jacket, 1),
     it('clothing', 'Sleepwear', 1),
     it('clothing', 'Comfortable shoes', 1),
     it('toiletries', 'Toothbrush & toothpaste', 1, true),
@@ -89,9 +112,14 @@ export function generatePackingList({ type = 'custom', days } = {}) {
     it('essentials', 'Keys', 1, true),
     it('misc', 'Reusable shopping bag', 1),
   ];
+  if (compact) base.push(it('misc', 'Laundry bag / detergent sheets', 1));
+  if (carryOnOnly) base.push(it('toiletries', 'Travel-size liquids (check your airline’s rules)', 1));
+  if (travelers > 1) {
+    base.push(it('documents', 'Group itinerary & booking details', 1), it('electronics', 'Multi-port charger / power strip', 1), it('misc', 'Snacks to share', 1));
+  }
 
-  const extras = (TYPE_EXTRAS[type] || TYPE_EXTRAS.custom)(d);
-  // a type-specific shoe/boot replaces the generic pair instead of sitting beside it
+  const extras = [...(STYLE_EXTRAS[style || type] || STYLE_EXTRAS.custom)(d), ...(CLIMATE_EXTRAS[climate] || [])];
+  // a style-specific shoe/boot replaces the generic pair instead of sitting beside it
   const specificFootwear = extras.some((e) => /shoes|boots/i.test(e.name));
   const seen = new Set();
   const out = [];
@@ -121,6 +149,23 @@ export function generateTasks({ transport = '' } = {}) {
     { title: 'Check out & confirm return transport', phase: 'return' },
     { title: 'Unpack and do laundry', phase: 'return' },
   ];
+}
+
+/** Tasks for a journey-home trip. The original trip's own return tasks stay where they are. */
+export function generateReturnTasks() {
+  return [
+    { title: 'Settle bills and check out', phase: 'before' },
+    { title: 'Confirm transport home', phase: 'before' },
+    { title: 'Re-check ID and tickets', phase: 'before' },
+    { title: 'Do a last sweep of the room', phase: 'before' },
+  ];
+}
+
+/** Items of a built-in template (id) or null. */
+export function builtinTemplateItems(id, overrides = {}) {
+  const t = BUILTIN_TEMPLATES.find((b) => b.id === id);
+  if (!t) return null;
+  return generatePackingList({ type: t.type, style: t.style, days: t.days, ...overrides });
 }
 
 /** Which bag kinds suit a category best, in order of preference. */

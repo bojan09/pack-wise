@@ -62,3 +62,30 @@ export function tripPhase(trip, now = new Date()) {
   if (toEnd >= 0) return 'ongoing';
   return 'past';
 }
+
+/**
+ * Overall readiness for the dashboard. Deterministic; reasons are short plain strings.
+ * @returns {{level: 'new'|'ready'|'on-track'|'attention', label: string, reasons: string[]}}
+ */
+export function readiness({ trip, items, tasks, now = new Date() }) {
+  if (!items.length) return { level: 'new', label: 'Add items to start', reasons: [] };
+  const q = sumQty(items);
+  const ess = essentialsLeft(items).length;
+  const t = taskProgress(tasks);
+  const phase = tripPhase(trip, now);
+  const days = trip.startDate ? daysUntil(trip.startDate, now) : null;
+
+  const reasons = [];
+  if (ess) reasons.push(`${ess} essential${ess === 1 ? '' : 's'} not packed`);
+  if (t.left) reasons.push(`${t.left} task${t.left === 1 ? '' : 's'} to do`);
+
+  if (q.packed === q.target && !ess && !t.left) return { level: 'ready', label: 'Ready to go', reasons: [] };
+
+  const soon = phase === 'upcoming' && days <= 3;
+  const behind = phase === 'upcoming' && (soon || (days <= 7 && q.percent < 50));
+  if ((ess && soon) || behind) {
+    if (behind && !reasons.length) reasons.push(`${q.percent}% packed`);
+    return { level: 'attention', label: 'Needs attention', reasons };
+  }
+  return { level: 'on-track', label: 'On track', reasons };
+}

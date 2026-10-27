@@ -3,9 +3,10 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button, field, selectInput, tiles } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
-import { BAG_KINDS, LIMITS, TRANSPORTS, TRIP_TYPES, cleanDate } from '../models.js';
-import { getTrip } from '../selectors.js';
-import { defaultDays } from '../templates.js';
+import { BAG_KINDS, CLIMATES, LIMITS, TRANSPORTS, TRIP_TYPES, cleanDate } from '../models.js';
+import { getTrip, sortedTrips } from '../selectors.js';
+import { BUILTIN_TEMPLATES, builtinTemplateItems, defaultDays } from '../templates.js';
+import { tripLengthDays } from '../progress.js';
 import { pageHeader } from './shared.js';
 
 export function TripFormScreen(ctx, { mode }) {
@@ -23,9 +24,19 @@ export function TripFormScreen(ctx, { mode }) {
     transport: existing?.transport ?? '',
     travelers: existing?.travelers || 1,
     notes: existing?.notes || '',
+    climate: existing?.climate || '',
     bagKinds: ['carry-on'],
-    generate: true,
+    startFrom: 'suggested', // suggested | template | copy | empty
+    templateId: ctx.query.get('template') || '',
+    copyFrom: '',
   };
+  const customTemplates = store.state.templates;
+  const pastTrips = sortedTrips(store.state, 'active').concat(sortedTrips(store.state, 'archived'));
+  if (!editing && form.templateId) {
+    form.startFrom = 'template';
+    const b = BUILTIN_TEMPLATES.find((t) => t.id === form.templateId);
+    if (b) form.type = b.type;
+  }
 
   return {
     title: editing ? 'Edit trip' : 'Create a New Trip',
@@ -42,6 +53,8 @@ export function TripFormScreen(ctx, { mode }) {
       const travelers = h('input', { type: 'number', name: 'travelers', min: 1, max: LIMITS.maxTravelers, value: form.travelers, inputmode: 'numeric', onInput: (e) => (form.travelers = Number(e.target.value) || 1) });
       const transport = selectInput({ options: TRANSPORTS, value: form.transport, name: 'transport' });
       transport.addEventListener('change', (e) => (form.transport = e.target.value));
+      const climate = selectInput({ options: CLIMATES, value: form.climate, name: 'climate' });
+      climate.addEventListener('change', (e) => (form.climate = e.target.value));
       const notes = h('textarea', { name: 'notes', rows: 3, maxlength: LIMITS.notes, placeholder: 'Anything to remember for this trip', onInput: (e) => (form.notes = e.target.value) }, form.notes);
       const errorBox = h('div', { class: 'form-errors', role: 'alert' });
 
@@ -59,23 +72,64 @@ export function TripFormScreen(ctx, { mode }) {
           problems[0].el.focus();
           return;
         }
-        const fields = { name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, travelers: form.travelers, notes: form.notes };
+        const fields = { name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, travelers: form.travelers, climate: form.climate, notes: form.notes };
         if (editing) {
           store.updateTrip(existing.id, fields);
           toast('Trip updated', { tone: 'success' });
           navigate(`/trip/${existing.id}`);
         } else {
-          const trip = store.createTrip(fields, { bagKinds: form.bagKinds, generate: form.generate });
+          const opts = { bagKinds: form.bagKinds, generate: form.startFrom === 'suggested' };
+          const days = form.startDate && form.endDate ? tripLengthDays({ startDate: form.startDate, endDate: form.endDate }) : null;
+          if (form.startFrom === 'template') {
+            const builtin = BUILTIN_TEMPLATES.find((t) => t.id === form.templateId);
+            const custom = customTemplates.find((t) => t.id === form.templateId);
+            if (builtin) opts.templateItems = builtinTemplateItems(builtin.id, { days: days || builtin.days, travelers: form.travelers, bagKinds: form.bagKinds, climate: form.climate });
+            else if (custom) opts.templateItems = custom.items;
+            else { errorBox.replaceChildren(h('p', { class: 'field-error', text: 'Choose a template.' })); return; }
+          } else if (form.startFrom === 'copy') {
+            if (!pastTrips.some((t) => t.id === form.copyFrom)) { errorBox.replaceChildren(h('p', { class: 'field-error', text: 'Choose a trip to copy.' })); return; }
+            opts.copyFrom = form.copyFrom;
+          } else if (form.startFrom === 'empty') opts.withTasks = true;
+          const trip = store.createTrip(fields, opts);
           if (!trip) {
             errorBox.replaceChildren(h('p', { class: 'field-error', text: 'Could not create the trip. Check the details and try again.' }));
             return;
           }
           navigator.storage?.persist?.().catch(() => {}); // best effort: ask the browser not to evict our data
-          toast(form.generate ? `Created “${trip.name}” with a starter packing list` : `Created “${trip.name}”`, { tone: 'success' });
+          toast(form.startFrom === 'empty' ? `Created “${trip.name}”` : `Created “${trip.name}” with a ready-made packing list`, { tone: 'success' });
           navigate(`/trip/${trip.id}`);
         }
       }
       formEl.addEventListener('submit', submit);
+
+      function startFromSection() {
+        const box = h('section', { class: 'form-section' });
+        const pick = h('div', { class: 'start-pick' });
+        const renderPick = () => {
+          pick.replaceChildren();
+          if (form.startFrom === 'template') {
+            const sel = h('select', { name: 'template', 'aria-label': 'Template' }, h('option', { value: '', text: 'Choose a template…' }), h('optgroup', { label: 'Built-in' }, BUILTIN_TEMPLATES.map((t) => h('option', { value: t.id, selected: t.id === form.templateId, text: `${t.name} — ${t.blurb}` }))), customTemplates.length ? h('optgroup', { label: 'My templates' }, customTemplates.map((t) => h('option', { value: t.id, selected: t.id === form.templateId, text: `${t.name} (${t.items.length} items)` }))) : null);
+            sel.addEventListener('change', (e) => { form.templateId = e.target.value; const b = BUILTIN_TEMPLATES.find((t) => t.id === form.templateId); if (b) { form.type = b.type; const r = formEl.querySelector(`input[name=type][value=${b.type}]`); if (r) r.checked = true; } });
+            pick.append(sel);
+          } else if (form.startFrom === 'copy') {
+            if (!pastTrips.length) pick.append(h('p', { class: 'muted small', text: 'No earlier trips to copy yet.' }));
+            else {
+              const sel = h('select', { name: 'copyFrom', 'aria-label': 'Trip to copy' }, h('option', { value: '', text: 'Choose a trip…' }), pastTrips.map((t) => h('option', { value: t.id, selected: t.id === form.copyFrom, text: t.name })));
+              sel.addEventListener('change', (e) => (form.copyFrom = e.target.value));
+              pick.append(sel, h('p', { class: 'muted small', text: 'Copies the list and tasks with everything unpacked. The original is not changed.' }));
+            }
+          } else {
+            pick.append(h('p', { class: 'muted small', text: form.startFrom === 'suggested' ? 'Suggestions use trip type, length, travelers, bags and climate. Always editable.' : 'Start with a blank list and add your own items.' }));
+          }
+        };
+        const group = h('div', { class: 'segmented wrap', role: 'radiogroup', 'aria-label': 'Start your list from' });
+        for (const [id, label] of [['suggested', 'Suggested list'], ['template', 'Template'], ['copy', 'Previous trip'], ['empty', 'Empty']]) {
+          group.append(h('label', { class: 'seg-opt' }, h('input', { type: 'radio', name: 'startFrom', value: id, checked: form.startFrom === id, onChange: () => { form.startFrom = id; renderPick(); } }), h('span', {}, h('span', { text: label }))));
+        }
+        renderPick();
+        box.append(h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '5' }), 'Packing list'), group, pick);
+        return box;
+      }
 
       formEl.append(
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '1' }), 'Trip type'), tiles({ name: 'type', label: 'Trip type', options: TRIP_TYPES, value: form.type, className: 'tiles-types', onChange: (v) => (form.type = v) })),
@@ -90,10 +144,8 @@ export function TripFormScreen(ctx, { mode }) {
               tiles({ name: 'bags', label: 'Luggage', options: BAG_KINDS.filter((k) => k.id !== 'other'), value: form.bagKinds, multi: true, className: 'tiles-bags', onChange: (v) => (form.bagKinds = v) }),
               h('p', { class: 'muted small', text: 'Pick what you are taking. You can add or rename bags later.' }),
             ),
-        h('details', { class: 'more-details' }, h('summary', {}, 'More options', icon('chevD', { size: 16 })), h('div', { class: 'form-stack' }, h('div', { class: 'grid-2' }, field({ label: 'Transport', input: transport }), field({ label: 'Travelers', input: travelers })), field({ label: 'Notes', input: notes }))),
-        editing
-          ? null
-          : h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', class: 'check', checked: form.generate, onChange: (e) => (form.generate = e.target.checked) }), h('span', {}, h('strong', { text: 'Generate a starter packing list' }), h('span', { class: 'muted small', text: 'Suggestions based on trip type and length. Fully editable.' }))),
+        h('details', { class: 'more-details' }, h('summary', {}, 'More options', icon('chevD', { size: 16 })), h('div', { class: 'form-stack' }, h('div', { class: 'grid-2' }, field({ label: 'Transport', input: transport }), field({ label: 'Travelers', input: travelers })), field({ label: 'Climate (optional)', input: climate, hint: 'Nudges the suggested list. It is not a weather forecast.' }), field({ label: 'Notes', input: notes }))),
+        editing ? null : startFromSection(),
         errorBox,
         h('div', { class: 'form-actions' }, button({ label: editing ? 'Save changes' : 'Generate Packing List', icon: editing ? 'check' : 'arrowR', iconAfter: !editing, variant: 'primary', type: 'submit', className: 'btn-block' }), editing ? button({ label: 'Cancel', variant: 'ghost', href: `#/trip/${existing.id}` }) : null),
       );
