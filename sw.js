@@ -1,6 +1,6 @@
 /* PackWise service worker: versioned app-shell precache, cache-first, offline-ready.
  * Bump CACHE_VERSION (and APP_VERSION in js/models.js) with every release. */
-const CACHE_VERSION = 'packwise-v1.2.1';
+const CACHE_VERSION = 'packwise-v1.3.0';
 
 const PRECACHE = [
   './',
@@ -12,6 +12,7 @@ const PRECACHE = [
   'css/components.css',
   'css/screens.css',
   'css/studio.css',
+  'css/explore.css',
   'js/theme-boot.js',
   'js/main.js',
   'js/dom.js',
@@ -25,6 +26,8 @@ const PRECACHE = [
   'js/migrations.js',
   'js/backup.js',
   'js/prefs.js',
+  'js/guide.js',
+  'js/data/catalog.js',
   'js/parallax.js',
   'js/haptics.js',
   'js/install.js',
@@ -51,6 +54,7 @@ const PRECACHE = [
   'js/screens/summary.js',
   'js/screens/settings.js',
   'js/screens/studio.js',
+  'js/screens/explore.js',
   'js/screens/print.js',
   'js/screens/templates.js',
   'js/screens/tripDialogs.js',

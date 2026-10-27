@@ -64,6 +64,7 @@ export function ChecklistScreen(ctx) {
     const choice = await actionSheet({
       title: trip.name,
       actions: [
+        { id: 'explore', label: 'Explore destination', icon: 'compass' },
         { id: 'studio', label: 'Packing Studio', icon: 'luggage' },
         { id: 'bags', label: 'Manage bags', icon: 'suitcase' },
         { id: 'tasks', label: 'Travel tasks', icon: 'tasks' },
@@ -79,6 +80,7 @@ export function ChecklistScreen(ctx) {
       ],
     });
     if (choice === 'studio') navigate(`/trip/${tripId}/studio`);
+    else if (choice === 'explore') navigate(`/trip/${tripId}/explore`);
     else if (choice === 'bags') manageBags(store, tripId);
     else if (choice === 'tasks') navigate(`/trip/${tripId}/tasks`);
     else if (choice === 'summary') navigate(`/trip/${tripId}/summary`);
@@ -256,7 +258,7 @@ export function ChecklistScreen(ctx) {
       const main = h(
         'div',
         { class: 'checklist-main' },
-        pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip), weatherLabel(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
+        pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip), weatherLabel(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'compass', label: 'Explore destination', href: `#/trip/${tripId}/explore`, key: 'explore-link' }), iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
         h('section', { class: 'card summary-card hide-desktop', 'aria-label': 'Packing summary' }, h('div', { class: 'row-between' }, h('strong', { text: 'Packed' }), h('strong', { class: 'pct', text: `${q.percent}%` })), progressBar(q.percent, { label: 'Packing progress' }), h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items${bags.length > 1 ? ` · ${plural(bags.length, 'bag')}` : ''}` })),
         complete ? h('div', { class: 'banner banner-success' }, icon('check', { size: 18 }), h('span', { text: 'Everything is packed!' }), h('a', { class: 'link', href: `#/trip/${tripId}/summary`, text: 'View summary' })) : essLeft.length ? h('div', { class: 'banner banner-warn essentials-banner' }, icon('star', { size: 18 }), h('span', { text: `${plural(essLeft.length, 'essential')} still to pack` }), h('button', { type: 'button', class: 'link-btn', text: 'Show', onClick: () => { filter = 'essential'; ctx.refresh(); } })) : null,
         h('div', { class: 'toolbar' }, search, bags.length > 1 ? bagSelect(bags) : null, sortSel),
@@ -278,6 +280,7 @@ export function ChecklistScreen(ctx) {
         ),
         essentialPanel(all),
         button({ label: 'Open Packing Studio', icon: 'luggage', variant: 'secondary', href: `#/trip/${tripId}/studio`, className: 'btn-block' }),
+        button({ label: 'Explore destination', icon: 'compass', variant: 'secondary', href: `#/trip/${tripId}/explore`, className: 'btn-block' }),
       );
 
       return h('div', { class: 'screen checklist-layout' }, main, panel);

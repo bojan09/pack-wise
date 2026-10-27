@@ -49,6 +49,18 @@ const ICONS = {
   winter: ['M12 2v20', 'M4 7l16 10', 'M20 7L4 17'],
   wind: ['M3 8h11a3 3 0 1 0-3-3', 'M3 12h16a3 3 0 1 1-3 3', 'M3 16h8'],
   rain: ['M7 15a4 4 0 1 1 1-7.9A5 5 0 0 1 18 9a3.5 3.5 0 0 1 0 7H7z', 'M9 19l-1 2', 'M13 19l-1 2', 'M17 19l-1 2'],
+  landmark: ['M3 21h18', 'M5 21V10', 'M9 21V10', 'M15 21V10', 'M19 21V10', 'M3 10l9-6 9 6'],
+  museum: ['M4 21h16', 'M6 21V9', 'M18 21V9', 'M10 21v-5h4v5', 'M3 9l9-5 9 5'],
+  dome: ['M4 20h16', 'M6 20v-6', 'M18 20v-6', 'M5 14a7 7 0 0 1 14 0', 'M12 4v3'],
+  street: ['M4 20L9 4', 'M20 20L15 4', 'M12 6v2', 'M12 11v2', 'M12 16v2'],
+  tree: ['M12 22v-7', 'M12 3a6 6 0 0 0-5 9.3h10A6 6 0 0 0 12 3z'],
+  binoculars: ['M5 18a3 3 0 1 0 6 0v-7H5z', 'M13 18a3 3 0 1 0 6 0v-7h-6z', 'M8 11V6h2', 'M16 11V6h-2', 'M11 14h2'],
+  wave: ['M3 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0', 'M3 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0'],
+  mountain: ['M3 20l6-11 4 6 3-4 5 9z'],
+  heart: ['M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z'],
+  external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+  compass: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M15.5 8.5l-2 5-5 2 2-5z'],
+  family: ['M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M3 20a6 6 0 0 1 12 0', 'M16 5a3 3 0 0 1 0 6', 'M17 14a6 6 0 0 1 4 6'],
   sparkle: ['M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z'],
   grip: ['M9 6h.01', 'M15 6h.01', 'M9 12h.01', 'M15 12h.01', 'M9 18h.01', 'M15 18h.01'],
   arrowU: ['M12 19V5', 'M6 11l6-6 6 6'],
@@ -60,7 +72,7 @@ const ICONS = {
 };
 
 /** @param {string} name  @param {{size?: number, class?: string}} [opts] */
-export function icon(name, { size = 18, class: cls = '' } = {}) {
+export function icon(name, { size = 18, class: cls = '', fill = false } = {}) {
   const paths = ICONS[name] || ICONS.box;
   return svg(
     'svg',
@@ -69,7 +81,7 @@ export function icon(name, { size = 18, class: cls = '' } = {}) {
       width: size,
       height: size,
       viewBox: '0 0 24 24',
-      fill: 'none',
+      fill: fill ? 'currentColor' : 'none',
       stroke: 'currentColor',
       'stroke-width': name === 'dots' || name === 'grip' ? '3.6' : '2',
       'stroke-linecap': 'round',

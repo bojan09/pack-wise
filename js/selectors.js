@@ -8,6 +8,9 @@ export const tripItems = (state, tripId) => state.items.filter((i) => i.tripId =
 export const tripBags = (state, tripId) =>
   state.bags.filter((b) => b.tripId === tripId).sort((a, b) => a.order - b.order);
 
+export const tripEntries = (state, tripId, kind) =>
+  state.entries.filter((e) => e.tripId === tripId && (!kind || e.kind === kind));
+
 export const tripTasks = (state, tripId) =>
   state.tasks.filter((t) => t.tripId === tripId).sort((a, b) => a.order - b.order);
 

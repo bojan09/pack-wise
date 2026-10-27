@@ -1,0 +1,150 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createStore } from '../../js/store.js';
+import { createMemoryAdapter } from '../../js/storage/memory.js';
+import { SCHEMA_VERSION, normalizeEntry, entryId } from '../../js/models.js';
+import { parseBackup, validateBackup } from '../../js/validate.js';
+import { migrate } from '../../js/migrations.js';
+import { exploreMessage } from '../../js/companion.js';
+import { tripEntries } from '../../js/selectors.js';
+
+const fresh = async (opts) => { const a = createMemoryAdapter(opts); const s = createStore(a); await s.init(); return { store: s, adapter: a }; };
+const mk = (s, name = 'Belgrade') => s.createTrip({ name, destination: name, type: 'city' }, { bagKinds: ['carry-on'] });
+
+test('schema is v2 and v1 data migrates with empty entries', () => {
+  assert.equal(SCHEMA_VERSION, 2);
+  const r = migrate({ trips: [] }, 1);
+  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 2, true, []]);
+  assert.deepEqual(migrate({ trips: [], entries: [{ id: 'x' }] }, 1).data.entries, [{ id: 'x' }]); // never drops existing
+});
+
+test('entry normalization: deterministic id, bounds, sanitizing', () => {
+  const e = normalizeEntry({ tripId: 't1', kind: 'place', refId: 'belgrade/kalemegdan-park-fortress', saved: true, note: 'x'.repeat(999), day: 99, order: 'NaN' });
+  assert.equal(e.id, entryId('t1', 'place', 'belgrade/kalemegdan-park-fortress'));
+  assert.equal(e.note.length, 300);
+  assert.equal(e.day, null);
+  assert.equal(e.order, 0);
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'nope', refId: 'a/b' }), null);
+  assert.equal(normalizeEntry({ tripId: '../x', kind: 'place', refId: 'a/b' }), null);
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'place', refId: 'A B' }), null);
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'place', refId: '' }), null);
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'place', refId: 'a/b', saved: 'yes' }).saved, false); // only real booleans
+});
+
+test('setSaved: toggles, never duplicates, trip-isolated, persisted', async () => {
+  const { store, adapter } = await fresh();
+  const a = mk(store, 'A');
+  const b = mk(store, 'B');
+  assert.equal(store.setSaved(a.id, 'place', 'belgrade/knez-mihailova-street', true), true);
+  assert.equal(store.setSaved(a.id, 'place', 'belgrade/knez-mihailova-street', true), true); // idempotent
+  assert.equal(tripEntries(store.state, a.id).length, 1);
+  assert.equal(tripEntries(store.state, b.id).length, 0);
+  assert.equal(store.isSaved(a.id, 'place', 'belgrade/knez-mihailova-street'), true);
+  assert.equal(store.isSaved(b.id, 'place', 'belgrade/knez-mihailova-street'), false);
+  await store.flush();
+  assert.equal((await adapter.load()).entries.length, 1);
+  assert.equal(store.setSaved(a.id, 'place', 'belgrade/knez-mihailova-street', false), false);
+  assert.equal(tripEntries(store.state, a.id).length, 0);
+  await store.flush();
+  assert.equal((await adapter.load()).entries.length, 0);
+  assert.equal(store.setSaved('ghost', 'place', 'a/b', true), null);
+  assert.equal(store.setSaved(a.id, 'bogus', 'a/b', true), null);
+  assert.equal(store.setSaved(a.id, 'place', 'BAD REF', true), null);
+});
+
+test('unsaving keeps an entry that carries a note or tried state (for later phases)', async () => {
+  const { store } = await fresh();
+  const t = mk(store);
+  store.setSaved(t.id, 'food', 'belgrade/x', true);
+  store.state.entries[0].note = 'ask for no onions';
+  store.setSaved(t.id, 'food', 'belgrade/x', false);
+  assert.equal(store.state.entries.length, 1);
+  assert.equal(store.state.entries[0].saved, false);
+});
+
+test('deleting a trip removes its entries; duplicating copies saved places only (untried)', async () => {
+  const { store, adapter } = await fresh();
+  const t = mk(store);
+  store.setSaved(t.id, 'place', 'belgrade/a', true);
+  store.setSaved(t.id, 'place', 'belgrade/b', true);
+  store.state.entries[0].tried = true;
+  const copy = store.duplicateTrip(t.id);
+  const copied = tripEntries(store.state, copy.id);
+  assert.equal(copied.length, 2);
+  assert.ok(copied.every((e) => e.tripId === copy.id && e.tried === false && e.saved));
+  assert.equal(new Set(store.state.entries.map((e) => e.id)).size, 4);
+  store.deleteTrip(t.id);
+  assert.equal(store.state.entries.every((e) => e.tripId === copy.id), true);
+  await store.flush();
+  assert.equal((await adapter.load()).entries.length, 2);
+});
+
+test('existing trips, items and packing math are untouched by saving places', async () => {
+  const { store } = await fresh();
+  const t = mk(store);
+  const before = JSON.stringify([store.state.trips, store.state.bags, store.state.items, store.state.tasks]);
+  store.setSaved(t.id, 'place', 'belgrade/a', true);
+  store.setSaved(t.id, 'place', 'belgrade/a', false);
+  assert.equal(JSON.stringify([store.state.trips, store.state.bags, store.state.items, store.state.tasks]), before);
+});
+
+test('backup round-trip keeps entries; invalid or orphaned entries are rejected', async () => {
+  const { store } = await fresh();
+  const t = mk(store);
+  store.setSaved(t.id, 'place', 'belgrade/a', true);
+  const json = JSON.stringify(store.exportData());
+  const parsed = parseBackup(json);
+  assert.equal(parsed.ok, true, parsed.errors.join(';'));
+  assert.equal(parsed.counts.entries, 1);
+  const file = store.exportData();
+  file.data.entries[0].tripId = 'ghost';
+  assert.equal(validateBackup(file).ok, false);
+  const bad = store.exportData();
+  bad.data.entries[0].kind = 'weird';
+  assert.equal(validateBackup(bad).ok, false);
+  // a v1 backup (no entries) still imports
+  const v1 = store.exportData();
+  v1.schemaVersion = 1;
+  delete v1.data.entries;
+  const r = validateBackup(v1);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data.entries, []);
+});
+
+test('merge import re-keys entries together with their trip (no overwrite, no orphan)', async () => {
+  const { store } = await fresh();
+  const t = mk(store);
+  store.setSaved(t.id, 'place', 'belgrade/a', true);
+  const parsed = parseBackup(JSON.stringify(store.exportData()));
+  await store.importData(parsed.data, 'merge'); // same ids as what is already there
+  assert.equal(store.state.trips.length, 2);
+  assert.equal(store.state.entries.length, 2);
+  assert.equal(new Set(store.state.entries.map((e) => e.id)).size, 2);
+  for (const e of store.state.entries) {
+    assert.ok(store.state.trips.some((x) => x.id === e.tripId));
+    assert.equal(e.id, entryId(e.tripId, e.kind, e.refId));
+  }
+});
+
+test('v1 data on disk upgrades to v2, keeps a safety copy, and loads', async () => {
+  const adapter = createMemoryAdapter({ schemaVersion: 1, seed: { trips: [{ id: 't1', name: 'Old', status: 'active' }] } });
+  const store = createStore(adapter);
+  await store.init();
+  assert.equal(store.state.trips.length, 1);
+  assert.deepEqual(store.state.entries, []);
+  assert.equal((await store.getSafetyCopy()).fromVersion, 1);
+  assert.equal((await adapter.load()).schemaVersion, SCHEMA_VERSION);
+});
+
+test('explore tip: honest about coverage, deterministic, dismissible', () => {
+  const none = exploreMessage({ status: 'none', asked: 'Rome, Italy' });
+  assert.match(none.text, /don’t have a verified guide/);
+  assert.match(none.text, /won’t make one up/);
+  assert.equal(exploreMessage({ status: 'none', asked: 'Rome, Italy', dismissed: [none.id] }), null);
+  assert.match(exploreMessage({ status: 'country', asked: 'Croatia' }).text, /Pick a city/);
+  const intro = exploreMessage({ status: 'covered', destName: 'Belgrade' });
+  assert.match(intro.text, /editorial guide to Belgrade/);
+  assert.deepEqual(exploreMessage({ status: 'covered', destName: 'Belgrade' }), intro);
+  assert.match(exploreMessage({ status: 'covered', destName: 'Belgrade', saved: 3 }).text, /3 saved/);
+  assert.equal(exploreMessage({ status: 'covered', destName: 'Belgrade', saved: 3, dismissed: ['explore-saved:Belgrade', 'explore-intro:Belgrade'] }), null);
+});

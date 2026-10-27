@@ -48,3 +48,21 @@ export function companionMessage({ screen = 'dashboard', trip, items, tasks, tri
   }
   return candidates.find((c) => !gone.has(c.id)) || null;
 }
+
+/**
+ * Tip for the Explore page. `status` comes from matchDestination().
+ * @returns {{id: string, text: string, mood: string}|null}
+ */
+export function exploreMessage({ status, destName = '', asked = '', saved = 0, dismissed = [] }) {
+  const gone = new Set(dismissed);
+  const list = [];
+  if (status === 'none' || status === 'ambiguous') {
+    list.push({ id: `explore-none:${asked}`, text: `I don’t have a verified guide for “${asked}” yet, and I won’t make one up. You can browse a covered destination below.`, mood: 'wave' });
+  } else if (status === 'country') {
+    list.push({ id: `explore-country:${asked}`, text: 'Pick a city to see places. A whole country is too big to guess at.', mood: 'happy' });
+  } else if (destName) {
+    if (saved > 0) list.push({ id: `explore-saved:${destName}`, text: `${saved} saved. They stay on this device and travel with your backup.`, mood: 'happy' });
+    list.push({ id: `explore-intro:${destName}`, text: `Here’s a short editorial guide to ${destName}. Tap the heart to save places for this trip.`, mood: 'happy' });
+  }
+  return list.find((m) => !gone.has(m.id)) || null;
+}

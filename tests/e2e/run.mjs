@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.2.1'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.3.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -424,6 +424,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
   const check = async (route) => {
     await page.goto(`${BASE}#${route}`);
     await page.waitForSelector('#view > *');
+    await page.waitForSelector('#view h1', { state: 'attached' }).catch(() => {}); // lazy screens
     const bad = await page.evaluate(() => {
       const issues = [];
       for (const el of document.querySelectorAll('#view button, #view a[href], .nav a')) {
@@ -443,7 +444,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
     assert.deepEqual(bad, [], `a11y issues on ${route}`);
   };
   const id = (await tripState(page)).trips[0].id;
-  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
+  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
 });
 
 await test('reduced motion disables animations; page still usable', async ({ page }) => {
@@ -1499,7 +1500,7 @@ await test('dark theme: every screen renders without overflow and with readable 
   await skipWelcome(page);
   await createTrip(page);
   const id = await firstTrip(page);
-  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
+  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
     await page.goto(`${BASE}#${route}`);
     await page.waitForTimeout(200);
     const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bg: getComputedStyle(document.body).backgroundColor }));
@@ -1666,6 +1667,333 @@ await test('welcome tagline is readable in light and dark', async ({ page }) => 
   }
 });
 
+
+// ============================================================ PHASE 3 (discovery): Explore Destination
+const explorePath = (id) => `${BASE}#/trip/${id}/explore`;
+const cardCount = (page) => page.locator('.place-card').count();
+
+await test('explore: destination comes from the trip (no re-entry), sections, cards and honest admission labels', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await page.click('a[aria-label="Explore destination"]'); // header action on the packing list
+  await page.waitForSelector('.place-card');
+  assert.ok(page.url().endsWith(`/trip/${id}/explore`));
+  assert.equal(await page.locator('input[type=text]').count(), 0, 'no destination field: the trip destination is reused');
+  assert.match(await page.locator('.dest-card h2').innerText(), /^Belgrade, Serbia$/);
+  const titles = await page.locator('.guide-section h2').allInnerTexts();
+  assert.deepEqual(titles, ['Free to Explore', 'Worth the Ticket', 'Check Admission First', 'Hidden Gems', 'Nature & Outdoors']);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const belgrade = CATALOG.destinations.find((d) => d.id === 'belgrade');
+  assert.equal(await cardCount(page), belgrade.places.length);
+  // every card: name, area, reason, category, admission label, attribution links
+  const cards = await page.evaluate(() => [...document.querySelectorAll('.place-card')].map((c) => ({ name: c.querySelector('h3').textContent, badge: c.querySelector('.adm-badge').textContent, meta: c.querySelector('.place-meta').textContent, why: c.querySelector('.place-why').textContent.length, tags: c.querySelectorAll('.tag').length, links: [...c.querySelectorAll('.place-links a')].map((a) => [a.target, a.rel, a.href.split('/')[2]]) })));
+  for (const c of cards) {
+    assert.ok(['Free area', 'Ticketed', 'Check admission'].includes(c.badge), c.name);
+    assert.match(c.meta, /Belgrade/);
+    assert.ok(c.why > 30 && c.tags >= 2);
+    assert.deepEqual(c.links, [['_blank', 'noopener noreferrer', 'www.openstreetmap.org'], ['_blank', 'noopener noreferrer', 'www.google.com'], ['_blank', 'noopener noreferrer', 'en.wikipedia.org']]);
+  }
+  // free entries are only open public places; unknown admission is never labelled free
+  const sectionOfCard = (name) => page.evaluate((n) => { const c = [...document.querySelectorAll('.place-card')].find((x) => x.querySelector('h3').textContent === n); return c.closest('section').querySelector('h2').textContent; }, name);
+  assert.equal(await sectionOfCard('Temple of Saint Sava'), 'Check Admission First');
+  assert.equal(await sectionOfCard('Nikola Tesla Museum'), 'Worth the Ticket');
+  assert.equal(await sectionOfCard('Knez Mihailova Street'), 'Free to Explore');
+  assert.equal(await sectionOfCard('Ada Ciganlija'), 'Nature & Outdoors');
+  // no invented specifics anywhere on the page
+  const text = await page.locator('.explore-screen').innerText();
+  assert.ok(!/[€$£]\s?\d|\d\s?(€|EUR|RSD)\b|\b\d{1,2}:\d{2}\b/.test(text), 'no prices or hours rendered');
+  assert.match(text, /Check admission means unknown, not free|“Check admission” means unknown, not free/);
+  assert.match(text, /Editorial, not live/);
+  // expandable admission explanation
+  await page.locator('.place-card summary').first().click();
+  assert.ok(await page.locator('.place-card details[open]').count());
+});
+
+await test('explore: several destinations each show their own real places', async ({ page }) => {
+  await skipWelcome(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  for (const [dest, expectId] of [['Zagreb, Croatia', 'zagreb'], ['Skopje', 'skopje'], ['Ohrid, North Macedonia', 'ohrid'], ['Sarajevo', 'sarajevo'], ['Tiranë', 'tirana'], ['Kotor, Montenegro', 'kotor']]) {
+    await createTrip(page, { dest });
+    const id = (await tripState(page)).trips.find((t) => t.name === dest).id;
+    await page.goto(explorePath(id));
+    await page.waitForSelector('.place-card');
+    const d = CATALOG.destinations.find((x) => x.id === expectId);
+    assert.equal(await page.locator('.dest-card h2').innerText(), `${d.name}, ${d.country}`, dest);
+    assert.equal(await cardCount(page), d.places.length, dest);
+    const names = await page.locator('.place-card h3').allInnerTexts();
+    assert.deepEqual(names.sort(), d.places.map((p) => p.name).sort(), dest);
+  }
+});
+
+await test('explore: unsupported destination gets an honest empty state and no invented places', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Rome, Italy' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('text=No verified guide');
+  assert.equal(await cardCount(page), 0);
+  assert.match(await page.locator('.empty-title').innerText(), /No verified guide for “rome, italy” yet/i);
+  assert.match(await page.locator('.bubble-text').innerText(), /won’t make one up/);
+  assert.ok((await page.locator('.covered .chip').count()) >= 12, 'lists what IS covered');
+  assert.match(await page.locator('.covered').innerText(), /Croatia[\s\S]*Split/);
+  const href = await page.getAttribute('a:has-text("Search the map")', 'href');
+  assert.match(href, /^https:\/\/www\.openstreetmap\.org\/search\?query=Rome%2C%20Italy$/);
+  // browsing a covered destination does not change the trip
+  const before = (await tripState(page)).trips[0];
+  await page.click('.covered a:has-text("Zagreb")');
+  await page.waitForSelector('.place-card');
+  assert.match(await page.locator('.banner-info').first().innerText(), /Browsing Zagreb instead of your trip/);
+  assert.deepEqual((await tripState(page)).trips[0], before, 'trip record unchanged');
+  await page.click('a:has-text("Use trip destination")');
+  await page.waitForSelector('text=No verified guide');
+});
+
+await test('explore: multi-stop, country-only and ambiguous destinations are handled, not guessed', async ({ page }) => {
+  await skipWelcome(page);
+  // multi-stop
+  await createTrip(page, { dest: 'Zagreb - Split - Budva' });
+  let id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  assert.deepEqual(await page.locator('[aria-label="Stops on this trip"] .chip').allInnerTexts().then((a) => a.map((t) => t.trim())), ['Zagreb', 'Split']);
+  assert.match(await page.locator('.banner-info').innerText(), /No guide yet for: budva/);
+  assert.equal(await page.locator('.dest-card h2').innerText(), 'Zagreb, Croatia');
+  await page.click('[aria-label="Stops on this trip"] .chip:has-text("Split")');
+  assert.equal(await page.locator('.dest-card h2').innerText(), 'Split, Croatia');
+  assert.equal(await page.locator('[aria-label="Stops on this trip"] .chip[aria-pressed=true]').innerText().then((t) => t.trim()), 'Split');
+  // country only
+  await createTrip(page, { dest: 'Croatia' });
+  id = (await tripState(page)).trips.find((t) => t.name === 'Croatia').id;
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.covered');
+  assert.equal(await cardCount(page), 0);
+  assert.deepEqual(await page.locator('.covered .chip').allInnerTexts().then((a) => a.map((t) => t.trim())), ['Zagreb', 'Split', 'Dubrovnik']);
+  await page.click('.covered a:has-text("Dubrovnik")');
+  await page.waitForSelector('.place-card');
+  assert.equal(await page.locator('.dest-card h2').innerText(), 'Dubrovnik, Croatia');
+  // ambiguous: Split in Montenegro
+  await createTrip(page, { dest: 'Split, Montenegro' });
+  id = (await tripState(page)).trips.find((t) => t.name === 'Split, Montenegro').id;
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.banner-warn');
+  assert.equal(await cardCount(page), 0);
+  assert.match(await page.locator('.banner-warn').innerText(), /different places, so nothing is shown automatically/);
+  await page.click('a:has-text("Show Split, Croatia")');
+  await page.waitForSelector('.place-card');
+  assert.equal(await page.locator('.dest-card h2').innerText(), 'Split, Croatia');
+});
+
+await test('explore: filters work on the real catalog; saved places persist per trip and never touch packing data', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade' });
+  const a = await firstTrip(page);
+  await createTrip(page, { dest: 'Belgrade', start: '2027-05-01', end: '2027-05-04' });
+  const b = (await tripState(page)).trips.find((t) => t.id !== a).id;
+  const byIdJson = (list) => JSON.stringify([...list].sort((x, y) => x.id.localeCompare(y.id))); // storage order is by key
+  const packingBefore = byIdJson((await tripState(page)).items);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const bel = CATALOG.destinations.find((d) => d.id === 'belgrade').places;
+  await page.goto(explorePath(a));
+  await page.waitForSelector('.place-card');
+  const chip = (label) => page.locator(`.filter-bar .chip:has-text("${label}")`).first();
+  // admission
+  await chip('Free area').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.admission === 'free').length);
+  assert.equal(await chip('Free area').getAttribute('aria-pressed'), 'true');
+  assert.ok((await page.locator('.adm-badge').allInnerTexts()).every((t) => t === 'Free area'));
+  await chip('Ticketed').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.admission === 'paid').length);
+  await chip('Check admission').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.admission === 'check').length);
+  await chip('All').click();
+  assert.equal(await cardCount(page), bel.length);
+  // category + setting + family (combined)
+  await chip('Museums').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.kind === 'museum').length);
+  await chip('Any category').click();
+  await chip('Outdoors').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.setting !== 'indoor').length);
+  await chip('Family-friendly').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.setting !== 'indoor' && p.family).length);
+  await chip('Free area').click();
+  assert.equal(await cardCount(page), bel.filter((p) => p.setting !== 'indoor' && p.family && p.admission === 'free').length);
+  assert.match(await page.locator('[aria-live=polite].sr-only').first().innerText(), /\d+ places? shown/);
+  // empty result + clear
+  await chip('Museums').click();
+  await page.waitForSelector('text=No places match');
+  await page.click('button:has-text("Clear filters")');
+  assert.equal(await cardCount(page), bel.length);
+  // saved
+  await page.click('.save-btn[aria-label^="Save Knez Mihailova Street"]');
+  await page.click('.save-btn[aria-label^="Save Nikola Tesla Museum"]');
+  assert.equal(await page.getAttribute('.save-btn[aria-label^="Saved: Knez Mihailova Street"]', 'aria-pressed'), 'true');
+  assert.equal((await tripState(page)).entries.length, 2);
+  await chip('Saved').click();
+  assert.deepEqual((await page.locator('.place-card h3').allInnerTexts()).sort(), ['Knez Mihailova Street', 'Nikola Tesla Museum']);
+  assert.equal(await page.locator('.filter-bar .chip:has-text("Saved") .chip-count').innerText(), '2');
+  // persistence across reload; other trip with the same destination has its own list
+  await reloadSettled(page);
+  await page.waitForSelector('.place-card');
+  await page.click('.filter-bar .chip:has-text("Saved")');
+  assert.equal(await cardCount(page), 2);
+  await page.goto(explorePath(b));
+  await page.waitForSelector('.place-card');
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 0);
+  await page.click('.filter-bar .chip:has-text("Saved")');
+  await page.waitForSelector('text=Nothing saved yet');
+  // unsave
+  await page.goto(explorePath(a));
+  await page.waitForSelector('.place-card');
+  await page.click('.save-btn.is-saved >> nth=0');
+  assert.equal((await tripState(page)).entries.length, 1);
+  // packing data was never modified
+  assert.equal(byIdJson((await tripState(page)).items), packingBefore);
+});
+
+await test('explore: saved places survive backup/restore and trip duplication; deleting a trip removes them', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Ohrid' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  await page.click('.save-btn[aria-label^="Save Lake Ohrid"]');
+  await page.click('.save-btn[aria-label^="Save Ohrid Old Town"]');
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  assert.equal(file.schemaVersion, 2);
+  assert.equal(file.data.entries.length, 2);
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 2);
+  await reloadSettled(page);
+  assert.equal((await tripState(page)).entries.length, 2);
+  // duplicate copies saved places; deleting the original keeps the copy's
+  const st = await tripState(page);
+  await page.evaluate((tid) => window.__packwise.store.duplicateTrip(tid), st.trips[0].id);
+  assert.equal((await tripState(page)).entries.length, 4);
+  await page.evaluate((tid) => window.__packwise.store.deleteTrip(tid), st.trips[0].id);
+  const after = await tripState(page);
+  assert.equal(after.entries.length, 2);
+  assert.ok(after.entries.every((e) => after.trips.some((t) => t.id === e.tripId)));
+});
+
+await test('explore: an existing v1 database upgrades to v2 without losing trips; saving then works', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade' });
+  const before = await tripState(page);
+  await page.waitForTimeout(150);
+  await idbSetVersion(page, 1); // pretend this device was last used by the previous release
+  await reloadSettled(page);
+  const after = await tripState(page);
+  assert.deepEqual(after.trips, before.trips);
+  assert.equal(after.items.length, before.items.length);
+  assert.deepEqual(after.entries, []);
+  assert.equal(await page.locator('.banner-error').count(), 0);
+  const raw = await idbSnapshotRaw(page);
+  assert.equal(raw.version, 2);
+  await page.goto(explorePath(after.trips[0].id));
+  await page.waitForSelector('.place-card');
+  await page.click('.save-btn >> nth=0');
+  assert.equal((await tripState(page)).entries.length, 1);
+});
+
+await test('explore: keyboard and screen-reader semantics (headings, pressed state, labelled links)', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Sarajevo' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  // heading outline: one h1, then section h2s, cards are h3
+  assert.equal(await page.locator('#view h1').count(), 1);
+  assert.ok((await page.locator('.guide-section h2').count()) >= 4);
+  assert.ok((await page.locator('.place-card h3').count()) > 5);
+  // sections are landmarks named by their heading
+  assert.equal(await page.locator('section.guide-section[aria-labelledby]').count(), await page.locator('.guide-section').count());
+  // filter chips: keyboard operable, expose pressed state
+  await page.focus('.filter-bar .chip:has-text("Free area")');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-pressed')), 'true', 'focus stays on the chip after re-render');
+  await page.keyboard.press('Space');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-pressed')), 'false');
+  // heart: reachable and toggled from the keyboard, state announced via aria-pressed + label
+  await page.focus('.save-btn >> nth=0');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-pressed')), 'true');
+  assert.match(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), /^Saved: .+ Remove from this trip$/);
+  // external links say they open a new tab
+  assert.match(await page.locator('.place-links a >> nth=0').innerText(), /opens in a new tab/);
+  // admission disclosure works with the keyboard
+  await page.focus('.place-card summary >> nth=0');
+  await page.keyboard.press('Enter');
+  assert.ok(await page.locator('.place-card details[open]').count());
+  // the companion tip can be dismissed and that exact tip stays dismissed
+  const tipText = await page.locator('.explore-tip .bubble-text').innerText();
+  await page.click('button[aria-label="Dismiss tip"]');
+  await reloadSettled(page);
+  await page.waitForSelector('.place-card');
+  assert.ok(!(await page.locator('.explore-tip .bubble-text').allInnerTexts()).includes(tipText));
+});
+
+await test('explore: reduced motion removes the card transition; works offline with saved places', async ({ page, ctx }) => {
+  await skipWelcome(page);
+  await page.goto(BASE);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await createTrip(page, { dest: 'Dubrovnik' });
+  const id = await firstTrip(page);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  assert.ok(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.place-grid')).animationDuration)) > 0.1, 'standard motion animates');
+  await page.click('.save-btn[aria-label^="Save Stradun"]');
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.place-card'); // the lazily loaded screen + catalog come from the offline cache
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 1);
+  await page.click('.save-btn[aria-label^="Save Dubrovnik City Walls"]');
+  assert.equal((await tripState(page)).entries.length, 2);
+  await ctx.setOffline(false);
+  await reloadSettled(page);
+  assert.equal((await tripState(page)).entries.length, 2);
+  // reduced motion
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("Reduced")');
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  assert.ok(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.place-grid')).animationDuration)) < 0.01, 'reduced motion: no animation');
+}, { sw: true });
+
+await test('explore: packing flows are unchanged (create, pack, studio, tasks, return trip still work)', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade', bags: ['Checked'] });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  await page.click('.save-btn >> nth=0');
+  await page.click('a[aria-label="Open packing list"]');
+  await page.waitForSelector('h1:has-text("Belgrade")');
+  await page.check('input[aria-label^="T-shirts:"]');
+  assert.ok((await pct(page)) > 0);
+  await page.goto(`${BASE}#/trip/${id}/studio`);
+  await page.waitForSelector('.stage');
+  await page.locator('.tray-token').first().click();
+  await page.goto(`${BASE}#/tasks`);
+  await page.waitForSelector('.task-row');
+  await page.goto(`${BASE}#/trip/${id}`);
+  await page.click('button[aria-label="Trip actions"]');
+  await page.click('.sheet-item:has-text("Plan return trip")');
+  await page.click('dialog button:has-text("Create return checklist")');
+  await page.waitForSelector('h1:has-text("— return")');
+  const st = await tripState(page);
+  assert.equal(st.entries.length, 1, 'the return trip does not inherit saved places');
+  assert.equal(st.entries[0].tripId, id);
+});
+
 // ------------------------------------------------------------- responsive
 const viewports = [[360, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
 for (const [w, h] of viewports) {
@@ -1709,7 +2037,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.2.1']);
+  assert.deepEqual(keys, ['packwise-v1.3.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -1749,7 +2077,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.2.1', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.3.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -1784,6 +2112,9 @@ await test('no innerHTML / eval / external URLs in app code', async () => {
     const src = readFileSync(f, 'utf8');
     if (/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(/.test(src)) offenders.push(`${f}: unsafe API`);
     const urls = [...src.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
+    // guide.js builds user-opened outbound search links (never fetched); CSP still blocks any fetch to them
+    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : null;
+    if (allowed) urls.splice(0, urls.length, ...urls.filter((u) => !allowed.test(u)));
     if (urls.length) offenders.push(`${f}: external URL ${urls[0]}`);
   }
   assert.deepEqual(offenders, []);

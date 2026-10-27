@@ -19,4 +19,5 @@ function redirectScreen(suffix, title, emptyTitle) {
 }
 
 export const PackRedirectScreen = redirectScreen('', 'Packing list', 'Nothing to pack yet');
+export const ExploreRedirectScreen = redirectScreen('/explore', 'Explore', 'No trip to explore yet');
 export const StudioRedirectScreen = redirectScreen('/studio', 'Packing Studio', 'No suitcase to show yet');

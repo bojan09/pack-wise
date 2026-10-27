@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 1;
-export const APP_VERSION = '1.2.1';
+export const SCHEMA_VERSION = 2; // v2 adds guide `entries` (saved places / dishes per trip)
+export const APP_VERSION = '1.3.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -266,6 +266,34 @@ export function normalizeTemplate(raw) {
     createdAt: cleanIso(raw.createdAt) || nowIso(),
   };
 }
+
+/** Guide entries: a saved place or dish (or, later, a day plan slot) belonging to one trip. */
+export const ENTRY_KINDS = ['place', 'food'];
+
+/** Deterministic id: one entry per (trip, kind, catalog item), so saving twice can never duplicate. */
+export const entryId = (tripId, kind, refId) => `${tripId}:${kind}:${refId}`;
+
+const isRef = (v) => typeof v === 'string' && /^[a-z0-9][a-z0-9/_.-]{0,79}$/.test(v);
+
+export function normalizeEntry(raw) {
+  if (!isObj(raw) || !isId(raw.tripId) || !ENTRY_KINDS.includes(raw.kind) || !isRef(raw.refId)) return null;
+  const createdAt = cleanIso(raw.createdAt) || nowIso();
+  return {
+    id: entryId(raw.tripId, raw.kind, raw.refId),
+    tripId: raw.tripId,
+    kind: raw.kind,
+    refId: raw.refId,
+    saved: raw.saved === true,
+    tried: raw.tried === true,
+    note: cleanMultiline(raw.note, 300),
+    day: Number.isInteger(raw.day) && raw.day >= 1 && raw.day <= 60 ? raw.day : null,
+    order: Number.isFinite(raw.order) ? raw.order : 0,
+    createdAt,
+    updatedAt: cleanIso(raw.updatedAt) || createdAt,
+  };
+}
+
+export const makeEntry = (fields) => normalizeEntry({ ...fields, ...stamp() });
 
 const stamp = () => {
   const t = nowIso();

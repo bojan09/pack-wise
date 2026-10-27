@@ -16,6 +16,7 @@ export function TripsScreen(ctx) {
       title: trip.name,
       actions: [
         { id: 'open', label: 'Open packing list', icon: 'pack' },
+        { id: 'explore', label: 'Explore destination', icon: 'compass' },
         { id: 'edit', label: 'Edit trip', icon: 'edit' },
         { id: 'dup', label: 'Duplicate', icon: 'copy' },
         trip.status === 'active' ? { id: 'archive', label: 'Archive', icon: 'archive' } : { id: 'restore', label: 'Restore', icon: 'restore' },
@@ -23,6 +24,7 @@ export function TripsScreen(ctx) {
       ],
     });
     if (choice === 'open') navigate(`/trip/${trip.id}`);
+    else if (choice === 'explore') navigate(`/trip/${trip.id}/explore`);
     else if (choice === 'edit') navigate(`/trip/${trip.id}/edit`);
     else if (choice === 'dup') {
       const name = await askName(`${trip.name} (copy)`);

@@ -42,13 +42,13 @@ async function seed(page) {
 }
 
 for (const [label, viewport, shots] of [
-  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'studio', 'templates', 'tasks', 'summary', 'settings']],
-  ['1440x900', { width: 1440, height: 900 }, ['dashboard', 'checklist', 'studio', 'templates', 'trips', 'settings']],
+  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'studio', 'explore', 'templates', 'tasks', 'summary', 'settings']],
+  ['1440x900', { width: 1440, height: 900 }, ['dashboard', 'checklist', 'studio', 'explore', 'templates', 'trips', 'settings']],
 ]) {
   const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
   const page = await ctx.newPage();
   const id = await seed(page);
-  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips', studio: `/trip/${id}/studio`, templates: '/templates' };
+  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips', studio: `/trip/${id}/studio`, templates: '/templates', explore: `/trip/${id}/explore` };
   for (const name of shots) {
     await page.goto(`${base}#${routes[name]}`);
     await page.waitForTimeout(500);

@@ -3,7 +3,7 @@ import { SCHEMA_VERSION } from '../models.js';
 import { STORE_NAMES } from './memory.js';
 
 const DB_NAME = 'packwise';
-const DB_VERSION = 1; // IndexedDB structure version (distinct from the data SCHEMA_VERSION)
+const DB_VERSION = 2; // IndexedDB structure version (distinct from the data SCHEMA_VERSION)
 
 function openDb() {
   return new Promise((resolve, reject) => {

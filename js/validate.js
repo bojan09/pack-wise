@@ -3,6 +3,7 @@ import {
   SCHEMA_VERSION,
   isId,
   normalizeBag,
+  normalizeEntry,
   normalizeItem,
   normalizeTask,
   normalizeTemplate,
@@ -13,7 +14,7 @@ import { migrate } from './migrations.js';
 export const BACKUP_APP = 'packwise';
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const MAX_RECORDS = 50000;
-const STORES = ['trips', 'bags', 'items', 'tasks', 'templates'];
+const STORES = ['trips', 'bags', 'items', 'tasks', 'templates', 'entries'];
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -57,8 +58,8 @@ export function validateBackup(obj) {
   if (total > MAX_RECORDS) errors.push('The backup contains too many records.');
   if (errors.length) return { ok: false, errors, warnings };
 
-  const out = { trips: [], bags: [], items: [], tasks: [], templates: [] };
-  const seen = { trips: new Set(), bags: new Set(), items: new Set(), tasks: new Set(), templates: new Set() };
+  const out = { trips: [], bags: [], items: [], tasks: [], templates: [], entries: [] };
+  const seen = { trips: new Set(), bags: new Set(), items: new Set(), tasks: new Set(), templates: new Set(), entries: new Set() };
 
   const collect = (key, normalize, label) => {
     (data[key] || []).forEach((raw, idx) => {
@@ -78,11 +79,13 @@ export function validateBackup(obj) {
   collect('items', normalizeItem, 'Item');
   collect('tasks', normalizeTask, 'Task');
   collect('templates', normalizeTemplate, 'Template');
+  collect('entries', normalizeEntry, 'Guide entry');
 
   // Referential integrity
   for (const b of out.bags) if (!seen.trips.has(b.tripId)) errors.push(`Bag "${b.name}" refers to a missing trip.`);
   for (const t of out.tasks) if (!seen.trips.has(t.tripId)) errors.push(`Task "${t.title}" refers to a missing trip.`);
   for (const i of out.items) if (!seen.trips.has(i.tripId)) errors.push(`Item "${i.name}" refers to a missing trip.`);
+  for (const e of out.entries) if (!seen.trips.has(e.tripId)) errors.push('A saved guide entry refers to a missing trip.');
   if (errors.length) return { ok: false, errors: errors.slice(0, 20), warnings };
 
   // A return-trip link to a trip that is not in the file is dropped, not rejected.
@@ -139,7 +142,9 @@ export function remapCollisions(data, existing, makeId) {
   }));
   const tasks = data.tasks.map((t) => ({ ...t, id: fresh(t.id), tripId: tripMap.get(t.tripId) }));
   const templates = data.templates.map((t) => ({ ...t, id: fresh(t.id) }));
-  return { trips, bags, items, tasks, templates };
+  // entry ids embed the trip id, so they are rebuilt after trips are re-keyed
+  const entries = (data.entries || []).map((e) => { const tid = tripMap.get(e.tripId); return { ...e, tripId: tid, id: `${tid}:${e.kind}:${e.refId}` }; });
+  return { trips, bags, items, tasks, templates, entries };
 }
 
 function fail(message) {

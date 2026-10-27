@@ -83,7 +83,7 @@ export function DashboardScreen(ctx) {
 
       const stats = h('div', { class: 'stats' }, stat('box', left, 'Essentials left', 'tone-sand'), stat('alert', tasksLeft, 'Travel tasks left', 'tone-coral'), stat('suitcase', bagsToPack, 'Bags to pack', 'tone-teal hide-mobile'));
 
-      const actions = h('div', { class: 'dash-actions' }, button({ label: 'Continue Packing', icon: 'arrowR', iconAfter: true, variant: 'primary', href: `#/trip/${trip.id}`, className: 'btn-block' }), button({ label: 'Studio', icon: 'luggage', variant: 'secondary', href: `#/trip/${trip.id}/studio` }), button({ label: 'View Details', variant: 'secondary', href: `#/trip/${trip.id}/summary`, className: 'hide-mobile' }));
+      const actions = h('div', { class: 'dash-actions' }, button({ label: 'Continue Packing', icon: 'arrowR', iconAfter: true, variant: 'primary', href: `#/trip/${trip.id}`, className: 'btn-block' }), button({ label: 'Studio', icon: 'luggage', variant: 'secondary', href: `#/trip/${trip.id}/studio` }), button({ label: 'Explore', icon: 'compass', variant: 'secondary', href: `#/trip/${trip.id}/explore` }), button({ label: 'View Details', variant: 'secondary', href: `#/trip/${trip.id}/summary`, className: 'hide-mobile' }));
 
       const recent = h(
         'section',

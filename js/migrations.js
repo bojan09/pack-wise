@@ -18,6 +18,12 @@ const MIGRATIONS = [
       return { ...data, items };
     },
   },
+  {
+    // v1 -> v2: guide entries (saved places / dishes) were added; existing data simply has none yet.
+    from: 1,
+    to: 2,
+    up: (data) => ({ ...data, entries: Array.isArray(data.entries) ? data.entries : [] }),
+  },
 ];
 
 /**

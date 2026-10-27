@@ -2,7 +2,7 @@
 // IndexedDB is unavailable (e.g. some private-browsing modes). Same interface as idb.js.
 import { SCHEMA_VERSION } from '../models.js';
 
-export const STORE_NAMES = ['trips', 'bags', 'items', 'tasks', 'templates'];
+export const STORE_NAMES = ['trips', 'bags', 'items', 'tasks', 'templates', 'entries'];
 
 export function createMemoryAdapter({ schemaVersion = SCHEMA_VERSION, seed = {} } = {}) {
   const db = Object.fromEntries(STORE_NAMES.map((s) => [s, new Map()]));

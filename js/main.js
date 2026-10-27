@@ -18,7 +18,7 @@ import { TripsScreen } from './screens/trips.js';
 import { TripFormScreen } from './screens/tripForm.js';
 import { ChecklistScreen } from './screens/checklist.js';
 import { TasksRedirectScreen, TasksScreen } from './screens/tasks.js';
-import { PackRedirectScreen, StudioRedirectScreen } from './screens/pack.js';
+import { ExploreRedirectScreen, PackRedirectScreen, StudioRedirectScreen } from './screens/pack.js';
 import { StudioScreen } from './screens/studio.js';
 import { PrintScreen } from './screens/print.js';
 import { TemplatesScreen } from './screens/templates.js';
@@ -31,10 +31,34 @@ const NAV = [
   { id: 'trips', href: '#/trips', short: 'Trips', long: 'My Trips', icon: 'suitcase' },
   { id: 'pack', href: '#/pack', short: 'Pack', long: 'Packing List', icon: 'pack' },
   { id: 'studio', href: '#/studio', short: 'Studio', long: 'Packing Studio', icon: 'luggage', desktopOnly: true },
+  { id: 'explore', href: '#/explore', short: 'Explore', long: 'Explore', icon: 'compass', desktopOnly: true },
   { id: 'templates', href: '#/templates', short: 'Templates', long: 'Templates', icon: 'template', desktopOnly: true },
   { id: 'tasks', href: '#/tasks', short: 'Tasks', long: 'Travel Tasks', icon: 'tasks' },
   { id: 'more', href: '#/settings', short: 'More', long: 'Settings', icon: 'more' },
 ];
+
+/**
+ * Load a screen module on demand (keeps the large destination catalog out of the startup path).
+ * Offline it still works: the module is precached by the service worker.
+ */
+const lazy = (loader, name) => (ctx) => {
+  let inner = null;
+  let failed = false;
+  loader().then((mod) => {
+    inner = mod[name](ctx);
+    if (inner.redirect) ctx.navigate(inner.redirect, { replace: true });
+    else ctx.refresh();
+  }).catch(() => { failed = true; ctx.refresh(); });
+  return {
+    title: 'Loading…',
+    build: () => (inner && !inner.redirect
+      ? inner.build()
+      : h('div', { class: 'screen' }, failed
+        ? emptyState({ title: 'Could not load this page', text: 'Reload the app and try again.', action: button({ label: 'Reload', variant: 'primary', onClick: () => location.reload() }) })
+        : h('p', { class: 'muted center', role: 'status', text: 'Loading…' }))),
+    destroy: () => inner?.destroy?.(),
+  };
+};
 
 const NotFound = () => ({
   title: 'Not found',
@@ -199,6 +223,8 @@ async function boot() {
     { path: '/trip/:id/tasks', name: 'tasks', nav: 'tasks', screen: TasksScreen },
     { path: '/trip/:id/summary', name: 'summary', nav: 'pack', screen: SummaryScreen },
     { path: '/trip/:id/studio', name: 'studio', nav: 'studio', screen: StudioScreen },
+    { path: '/trip/:id/explore', name: 'explore', nav: 'explore', screen: lazy(() => import('./screens/explore.js'), 'ExploreScreen') },
+    { path: '/explore', name: 'explore-home', nav: 'explore', screen: ExploreRedirectScreen },
     { path: '/trip/:id/print', name: 'print', nav: 'pack', screen: PrintScreen },
     { path: '/templates', name: 'templates', nav: 'templates', screen: TemplatesScreen },
     { path: '/studio', name: 'studio-home', nav: 'studio', screen: StudioRedirectScreen },

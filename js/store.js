@@ -6,12 +6,15 @@ import {
   SCHEMA_VERSION,
   APP_VERSION,
   makeBag,
+  makeEntry,
+  entryId,
   makeItem,
   makeTask,
   makeTemplate,
   makeTrip,
   newId,
   normalizeBag,
+  normalizeEntry,
   normalizeItem,
   normalizeTask,
   normalizeTemplate,
@@ -26,11 +29,11 @@ import { tripBags, tripItems, tripTasks } from './selectors.js';
 import { tripLengthDays } from './progress.js';
 import { describeStorageError } from './storage/idb.js';
 
-const COLLECTIONS = ['trips', 'bags', 'items', 'tasks', 'templates'];
+const COLLECTIONS = ['trips', 'bags', 'items', 'tasks', 'templates', 'entries'];
 const normalizeCategoryOf = (g) => String(g.category || 'misc').toLowerCase();
 
 export function createStore(adapter) {
-  const state = { trips: [], bags: [], items: [], tasks: [], templates: [], loaded: false, saveError: null };
+  const state = { trips: [], bags: [], items: [], tasks: [], templates: [], entries: [], loaded: false, saveError: null };
   const listeners = new Set();
   let queue = Promise.resolve();
 
@@ -179,7 +182,9 @@ export function createStore(adapter) {
       makeItem({ ...i, tripId: trip.id, bagId: bagMap.get(i.bagId) || '', packed: 0 }),
     );
     const tasks = tripTasks(state, id).map((t) => makeTask({ ...t, tripId: trip.id, done: false }));
-    commit({ put: { trips: [trip], bags, items, tasks } });
+    // saved places/dishes come along (not their tried state); the copy is its own trip
+    const entries = state.entries.filter((e) => e.tripId === id && e.saved).map((e) => makeEntry({ ...e, tripId: trip.id, tried: false }));
+    commit({ put: { trips: [trip], bags, items, tasks, entries } });
     return trip;
   }
 
@@ -195,6 +200,7 @@ export function createStore(adapter) {
         bags: tripBags(state, id).map((b) => b.id),
         items: tripItems(state, id).map((i) => i.id),
         tasks: tripTasks(state, id).map((t) => t.id),
+        entries: state.entries.filter((e) => e.tripId === id).map((e) => e.id),
       },
     });
     return true;
@@ -488,6 +494,28 @@ export function createStore(adapter) {
     return ids.length;
   }
 
+  // ---------------------------------------------------------- guide entries
+  /** Save/unsave a catalog item for a trip. Returns the new saved state. */
+  function setSaved(tripId, kind, refId, saved) {
+    if (!find('trips', tripId)) return null;
+    const id = entryId(tripId, kind, refId);
+    const cur = find('entries', id);
+    if (!saved) {
+      if (!cur) return false;
+      // keep the record only if it still carries something else the user wrote or ticked
+      if (cur.tried || cur.note) commit({ put: { entries: [{ ...touch(cur), saved: false }] } });
+      else commit({ remove: { entries: [id] } });
+      return false;
+    }
+    const next = cur ? { ...touch(cur), saved: true } : makeEntry({ tripId, kind, refId, saved: true, order: state.entries.filter((e) => e.tripId === tripId).length });
+    const norm = normalizeEntry(next);
+    if (!norm) return null;
+    commit({ put: { entries: [norm] } });
+    return true;
+  }
+
+  const isSaved = (tripId, kind, refId) => Boolean(find('entries', entryId(tripId, kind, refId))?.saved);
+
   // ------------------------------------------------------- backup / import
   function exportData() {
     return {
@@ -566,6 +594,8 @@ export function createStore(adapter) {
     updateTemplate,
     deleteTemplate,
     saveTripAsTemplate,
+    setSaved,
+    isSaved,
     createReturnTrip,
     loadDemo,
     removeDemo,

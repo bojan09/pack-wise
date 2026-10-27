@@ -54,6 +54,16 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## Discovery plan, Phase 3: Explore Destination (v1.3.0)
+
+Roadmap now follows `PackWise_Destination_Discovery_Extension.md`: Phase 3 Discovery (this), Phase 4 Food & Drink, Phase 5 My Trip Guide, Phase 6 final release (rescheduled). Gates: stop for approval after each.
+
+- **Schema v2**: new `entries` store (`{id: tripId:kind:refId, tripId, kind: place|food, refId, saved, tried, note, day, order}`), IndexedDB v2, migration v1→v2, validation + merge re-keying, cascade delete, duplicate copies saved (untried) entries. Phase 4 reuses `kind: 'food'` + `tried`/`note`; Phase 5 uses `day`/`order`.
+- `js/guide.js` (pure): destination matching, filtering, sectioning; `js/data/catalog.js` (editorial data); `js/screens/explore.js` loaded lazily via `lazy()` in `main.js` (precached, works offline).
+- Honesty rules enforced by tests: no price/hours/coordinate fields, free ≠ unknown, no fuzzy matching, conflicts flagged.
+- Tests: 77 unit (catalog integrity + content rules, matching, filters, entries, migration, backup), e2e adds 10 explore checks (multi-destination, unsupported, multi-stop/country/ambiguous, filters, saved persistence/isolation, backup/duplicate/delete, v1→v2 upgrade, keyboard/SR semantics, reduced motion + offline, packing flows unchanged) plus explore in the a11y, overflow (5 viewports) sweeps.
+- Known gaps: data is editorial, not verified against a live source (network hosts were blocked); Chromium only; no screen-reader run.
+
 ## UI polish + parallax (v1.2.1)
 
 - Fixes from user screenshots: welcome tagline now sits on a readable chip (and "Wise" uses the bright accent in dark mode); template cards have a footer row with equal-width **Use template** / **Customize** (secondary, visible in dark); Settings: solid accent selected tab, two balanced columns (CSS columns), row/fact patterns (`srow`, `fact`), About split into Install / Offline & updates / Privacy / Good to know; fixed a stray "null" rendered by `replaceChildren(null)`.

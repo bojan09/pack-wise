@@ -41,6 +41,12 @@ A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScrip
 - **PWA:** install prompt/iOS steps, hourly update check on return, cache integrity verification and repair.
 - **Completion scene** with confetti and a closed suitcase (motion permitting).
 
+## Added in Phase 3 of the Discovery plan (v1.3.0): Explore Destination
+
+Every trip has an **Explore** page (packing-list header, trip menu, dashboard, summary, and *Explore* in the desktop sidebar) that reuses the trip's destination. Places are grouped into Free to Explore, Worth the Ticket, Check Admission First, Hidden Gems and Nature & Outdoors, with filters (free/ticketed/check, category, indoor/outdoor, family-friendly, saved) that only appear when they would split the list. Save places to the trip with the heart; saved places are stored locally, included in backups and work offline.
+
+The catalog is a short editorial list (12 Balkan cities) with **no prices, hours or coordinates**; unsupported destinations get an honest empty state. See `docs/DESTINATION_DATA.md` for sources, licensing and limits.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.
