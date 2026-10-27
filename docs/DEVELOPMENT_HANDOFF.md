@@ -54,6 +54,13 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## v1.8.0: review fixes from a phone
+
+- **Mobile parity**: the bottom bar's *More* tab now opens `/more` (`screens/more.js`): Packing Studio, Explore, Taste, My Guide, Templates, Settings, each pointing at the current trip (or at "new trip" when there is none). The sidebar (>= 900px) shows *Settings* instead and hides *More* (`hide-sidebar`). `/guide` and `/taste` redirect to the current trip like `/explore`.
+- **Scope is asked, not assumed**: creating a trip requires choosing *Within my country* or *Abroad* (home-country suggestion still pre-selects). Trips with no answer (older ones) show a one-tap question banner on the packing list and Travel Tasks (`scopeBanner()` in `screens/shared.js`). Answering *within my country* offers an undoable removal of abroad-only tasks AND unpacked items; nothing changes without a tap.
+- Category colors are stronger on the packing list (tinted header band and percent pill).
+- Note: the live site is deployed by Vercel from `master`; check Deployments if a pushed commit is not live (a stale service worker can also show the previous version until the update prompt is accepted).
+
 ## Phase 6: final polish and production (v1.7.0)
 
 What was audited and what changed:

@@ -18,12 +18,13 @@ import { TripsScreen } from './screens/trips.js';
 import { TripFormScreen } from './screens/tripForm.js';
 import { ChecklistScreen } from './screens/checklist.js';
 import { TasksRedirectScreen, TasksScreen } from './screens/tasks.js';
-import { ExploreRedirectScreen, PackRedirectScreen, StudioRedirectScreen } from './screens/pack.js';
+import { ExploreRedirectScreen, GuideRedirectScreen, PackRedirectScreen, StudioRedirectScreen, TasteRedirectScreen } from './screens/pack.js';
 import { StudioScreen } from './screens/studio.js';
 import { PrintScreen } from './screens/print.js';
 import { TemplatesScreen } from './screens/templates.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SettingsScreen } from './screens/settings.js';
+import { MoreScreen } from './screens/more.js';
 import { WelcomeScreen } from './screens/welcome.js';
 
 const NAV = [
@@ -34,7 +35,8 @@ const NAV = [
   { id: 'explore', href: '#/explore', short: 'Explore', long: 'Explore', icon: 'compass', desktopOnly: true },
   { id: 'templates', href: '#/templates', short: 'Templates', long: 'Templates', icon: 'template', desktopOnly: true },
   { id: 'tasks', href: '#/tasks', short: 'Tasks', long: 'Travel Tasks', icon: 'tasks' },
-  { id: 'more', href: '#/settings', short: 'More', long: 'Settings', icon: 'more' },
+  { id: 'settings', href: '#/settings', short: 'Settings', long: 'Settings', icon: 'sliders', desktopOnly: true },
+  { id: 'more', href: '#/more', short: 'More', long: 'More', icon: 'more', mobileOnly: true },
 ];
 
 /**
@@ -102,7 +104,7 @@ function buildShell() {
     'nav',
     { class: 'nav', 'aria-label': 'Main' },
     h('a', { class: 'nav-brand', href: '#/', 'aria-label': 'PackWise home' }, logoMark({ size: 34 }), h('span', {}, 'Pack', h('b', { text: 'Wise' }))),
-    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 20 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
+    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : n.mobileOnly ? 'hide-sidebar' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 20 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
     h('div', { class: 'nav-foot' }, destinationArt('beach', { className: 'nav-foot-art' }), h('p', { text: 'Collect trips, not things.' })),
   );
   const banners = h('div', { class: 'banners' });
@@ -227,13 +229,16 @@ async function boot() {
     { path: '/trip/:id/guide', name: 'guide', nav: 'explore', screen: lazy(() => import('./screens/guide.js'), 'GuideScreen') },
     { path: '/trip/:id/guide/print', name: 'guide-print', nav: 'pack', screen: lazy(() => import('./screens/guide.js'), 'GuidePrintScreen') },
     { path: '/trip/:id/taste', name: 'taste', nav: 'explore', screen: lazy(() => import('./screens/taste.js'), 'TasteScreen') },
+    { path: '/guide', name: 'guide-home', nav: 'explore', screen: GuideRedirectScreen },
+    { path: '/taste', name: 'taste-home', nav: 'explore', screen: TasteRedirectScreen },
     { path: '/explore', name: 'explore-home', nav: 'explore', screen: ExploreRedirectScreen },
     { path: '/trip/:id/print', name: 'print', nav: 'pack', screen: PrintScreen },
     { path: '/templates', name: 'templates', nav: 'templates', screen: TemplatesScreen },
     { path: '/studio', name: 'studio-home', nav: 'studio', screen: StudioRedirectScreen },
     { path: '/pack', name: 'pack', nav: 'pack', screen: PackRedirectScreen },
     { path: '/tasks', name: 'tasks-home', nav: 'tasks', screen: TasksRedirectScreen },
-    { path: '/settings', name: 'settings', nav: 'more', screen: SettingsScreen },
+    { path: '/more', name: 'more', nav: 'more', screen: MoreScreen },
+    { path: '/settings', name: 'settings', nav: 'settings', screen: SettingsScreen },
     { path: '/404', name: 'notfound', nav: null, screen: NotFound },
   ];
 

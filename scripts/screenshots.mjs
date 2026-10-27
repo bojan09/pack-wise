@@ -23,6 +23,7 @@ async function seed(page) {
     await page.fill('input[name=start]', s);
     await page.fill('input[name=end]', e);
     for (const b of bags) await page.click(`label.tile:has-text("${b}")`);
+    await page.click('label.seg-opt:has-text("Abroad")'); // new trips must say where they go
     await page.click('button:has-text("Generate Packing List")');
     await page.waitForSelector(`h1:has-text("${dest}")`);
   };

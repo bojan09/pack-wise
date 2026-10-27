@@ -1,11 +1,13 @@
 import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
-import { iconButton, progressBar } from '../ui/components.js';
+import { button, iconButton, progressBar } from '../ui/components.js';
+import { toast } from '../ui/toast.js';
+import { ABROAD_ONLY_ITEMS, isAbroadOnlyTask } from '../templates.js';
 import { destinationArt } from '../ui/art.js';
 import { CONDITIONS, SEASONS, TRIP_TYPES } from '../models.js';
 import { daysUntil, tripLengthDays, tripPhase, sumQty } from '../progress.js';
 import { formatRange, plural } from '../format.js';
-import { tripItems } from '../selectors.js';
+import { tripItems, tripTasks } from '../selectors.js';
 
 export function pageHeader({ title, subtitle, back, actions = [], className = '' }) {
   return h(
@@ -75,4 +77,35 @@ export function tripCard({ trip, state, href, onMenu, compact = false }) {
     ),
     onMenu ? iconButton({ icon: 'dots', label: `Actions for ${trip.name}`, onClick: onMenu, className: 'trip-card-menu' }) : null,
   );
+}
+
+/**
+ * Scope banners shared by the packing list and the tasks page:
+ *  - trip not yet classified: ask "within my country or abroad?" (two buttons, one tap);
+ *  - domestic trip that still has abroad-only tasks / unpacked items: offer to remove them (undoable).
+ * Nothing is ever changed without a tap.
+ */
+export function scopeBanner(store, trip) {
+  if (!trip) return null;
+  if (!trip.scope) {
+    const set = (scope) => { store.updateTrip(trip.id, { scope }); };
+    return h('section', { class: 'banner banner-info scope-ask', 'aria-label': 'Where is this trip going?' },
+      icon('compass', { size: 18 }),
+      h('span', { class: 'scope-ask-text' }, h('strong', { text: 'Within your country or abroad?' }), h('span', { class: 'muted small block', text: 'Trips at home skip passport, insurance, bank-notice and adapter reminders.' })),
+      h('div', { class: 'scope-ask-actions' }, button({ label: 'Within my country', variant: 'primary', key: 'scope-domestic', onClick: () => set('domestic') }), button({ label: 'Abroad', variant: 'secondary', key: 'scope-abroad', onClick: () => set('abroad') })));
+  }
+  if (trip.scope !== 'domestic') return null;
+  const tasks = tripTasks(store.state, trip.id).filter((t) => isAbroadOnlyTask(t.title) && !t.done);
+  const items = store.state.items.filter((i) => i.tripId === trip.id && ABROAD_ONLY_ITEMS.includes(i.name) && i.packed === 0);
+  const n = tasks.length + items.length;
+  if (!n) return null;
+  const names = [...tasks.map((t) => t.title), ...items.map((i) => i.name)].map((s) => s.toLowerCase()).join(', ');
+  return h('section', { class: 'banner banner-info scope-banner', 'aria-label': 'Reminders usually only needed abroad' },
+    icon('info', { size: 18 }),
+    h('span', { text: `This trip is within your country, but ${plural(n, 'thing')} here ${n === 1 ? 'is' : 'are'} usually only needed abroad (${names}).` }),
+    button({ label: `Remove ${n === 1 ? 'it' : 'them'}`, variant: 'secondary', key: 'drop-abroad', onClick: () => {
+      const goneTasks = tasks.map((t) => store.deleteTask(t.id)).filter(Boolean);
+      const goneItems = items.map((i) => store.deleteItem(i.id)).filter(Boolean);
+      toast(`Removed ${plural(goneTasks.length + goneItems.length, 'thing')}`, { action: { label: 'Undo', run: () => { goneTasks.forEach((t) => store.restoreTask(t)); goneItems.forEach((i) => store.restoreItem(i)); } } });
+    } }));
 }

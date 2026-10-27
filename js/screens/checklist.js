@@ -9,7 +9,7 @@ import { BAG_KINDS, CATEGORY_PRESETS, LIMITS, PRIORITIES, categoryKey, categoryM
 import { bagProgress, categoryProgress, essentialsLeft, isItemPacked, sumQty } from '../progress.js';
 import { getTrip, tripBags, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
-import { pageHeader, tripSubtitle, weatherLabel } from './shared.js';
+import { pageHeader, scopeBanner, tripSubtitle, weatherLabel } from './shared.js';
 import { returnTripDialog, saveTemplateDialog } from './tripDialogs.js';
 import { copyTripText, downloadTripText } from '../backup.js';
 
@@ -262,6 +262,7 @@ export function ChecklistScreen(ctx) {
         { class: 'checklist-main' },
         pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip), weatherLabel(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'compass', label: 'Explore destination', href: `#/trip/${tripId}/explore`, key: 'explore-link' }), iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
         h('section', { class: 'card summary-card hide-desktop', 'aria-label': 'Packing summary' }, h('div', { class: 'row-between' }, h('strong', { text: 'Packed' }), h('strong', { class: 'pct', text: `${q.percent}%` })), progressBar(q.percent, { label: 'Packing progress' }), h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items${bags.length > 1 ? ` · ${plural(bags.length, 'bag')}` : ''}` })),
+        scopeBanner(store, trip),
         complete ? h('div', { class: 'banner banner-success' }, icon('check', { size: 18 }), h('span', { text: 'Everything is packed!' }), h('a', { class: 'link', href: `#/trip/${tripId}/summary`, text: 'View summary' })) : essLeft.length ? h('div', { class: 'banner banner-warn essentials-banner' }, icon('star', { size: 18 }), h('span', { text: `${plural(essLeft.length, 'essential')} still to pack` }), h('button', { type: 'button', class: 'link-btn', text: 'Show', onClick: () => { filter = 'essential'; ctx.refresh(); } })) : null,
         h('div', { class: 'toolbar' }, search, bags.length > 1 ? bagSelect(bags) : null, sortSel),
         h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter items' }, FILTERS.map(([id, label]) => chip({ label, count: counts[id], active: filter === id, key: `flt-${id}`, onClick: () => { filter = id; ctx.refresh(); } })), chip({ label: selecting ? 'Selecting' : 'Select', active: selecting, key: 'flt-select', onClick: () => { selecting = !selecting; selected.clear(); ctx.refresh(); } })),

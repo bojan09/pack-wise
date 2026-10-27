@@ -1646,3 +1646,71 @@ html[data-bg='minimal'] .trip-card {
   content-visibility: auto;
   contain-intrinsic-size: auto 62px;
 }
+
+/* More (mobile menu) */
+.more-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px 8px;
+  list-style: none;
+}
+
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 6px;
+  border-top: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.more-list li:first-child .more-item {
+  border-top: 0;
+}
+
+.more-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--tone-teal);
+  color: var(--tone-teal-ink);
+}
+
+.more-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* scope question banner */
+.scope-ask {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.scope-ask-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.scope-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* category header: a visible band of the category color */
+.category-head {
+  background: color-mix(in srgb, var(--cat, transparent) 10%, transparent);
+}
+
+.pct-pill {
+  background: var(--cat-soft, var(--tone-teal));
+  color: var(--cat-ink, var(--tone-teal-ink));
+}

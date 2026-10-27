@@ -69,6 +69,10 @@ The guide switch has a third tab, **My Guide**: everything saved from Places and
 
 All planned phases are complete: packing (lists, bags, Studio, templates, tasks, return trips, backup), then the Destination Discovery plan (Explore, Taste, My Guide) and a feedback round (item pictures, category colors, trip scope, background colors, own places). Read `docs/KNOWN_LIMITATIONS.md` before relying on the destination content, and `docs/PRIVACY.md` for what is stored and linked.
 
+## v1.8.0
+
+Mobile now has a **More** tab with everything the desktop sidebar has (Studio, Explore, Taste, My Guide, Templates, Settings). New trips must say whether they are **within your country or abroad** (older trips are asked once, with a one-tap banner), and the packing list's category headers are color-banded.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

@@ -23,7 +23,7 @@ export function TripFormScreen(ctx, { mode }) {
     startDate: existing?.startDate || '',
     endDate: existing?.endDate || '',
     transport: existing?.transport ?? '',
-    scope: existing?.scope || 'abroad',
+    scope: existing?.scope || '', // new trips must choose; old trips can be left unset
     scopeTouched: Boolean(existing?.scope),
     travelers: existing?.travelers || 1,
     notes: existing?.notes || '',
@@ -84,6 +84,7 @@ export function TripFormScreen(ctx, { mode }) {
         const dest = form.destination.trim();
         const tripName = form.name.trim() || dest;
         if (!tripName) problems.push({ el: destination, msg: 'Enter a destination or a trip name.' });
+        if (!editing && !form.scope) problems.push({ el: formEl.querySelector('input[name=scope]'), msg: 'Choose whether this trip is within your country or abroad.' });
         if (form.startDate && form.endDate && form.endDate < form.startDate) problems.push({ el: end, msg: 'The return date must be on or after the departure date.' });
         errorBox.replaceChildren(...problems.map((p) => h('p', { class: 'field-error', text: p.msg })));
         for (const el of [destination, end]) el.removeAttribute('aria-invalid');
@@ -177,7 +178,7 @@ export function TripFormScreen(ctx, { mode }) {
 
       formEl.append(
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '1' }), 'Trip type'), tiles({ name: 'type', label: 'Trip type', options: TRIP_TYPES, value: form.type, className: 'tiles-types', onChange: (v) => { form.type = v; if (v === 'camping' && !editing && !form.bagsTouched) setBagTiles(['backpack', 'camping']); } })),
-        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), field({ label: 'Destination', input: destination }), field({ label: 'Trip name (optional)', input: name }), h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'scope-label', text: 'Where to?' }), segmented({ name: 'scope', label: 'Where to?', value: form.scope, options: TRIP_SCOPES, onChange: (v) => { form.scope = v; form.scopeTouched = true; scopeHint.textContent = ''; } }), scopeHint, h('p', { class: 'muted small', text: 'Trips within your own country skip passport, insurance, bank-notice and adapter reminders.' }))),
+        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), field({ label: 'Destination', input: destination }), field({ label: 'Trip name (optional)', input: name }), h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'scope-label', text: editing ? 'Where to?' : 'Where to? (required)' }), segmented({ name: 'scope', label: 'Where to?', value: form.scope, options: TRIP_SCOPES, onChange: (v) => { form.scope = v; form.scopeTouched = true; scopeHint.textContent = ''; } }), scopeHint, h('p', { class: 'muted small', text: 'Trips within your own country skip passport, insurance, bank-notice and adapter reminders. Unsure? Pick Abroad: you can remove anything you do not need.' }))),
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '3' }), 'Dates'), h('div', { class: 'grid-2' }, field({ label: 'Departure', input: start }), field({ label: 'Return', input: end })), h('p', { class: 'muted small', text: `Dates are optional. Without them, ${defaultDays(form.type)} days are assumed for the starter list.` })),
         weatherSection(),
         editing

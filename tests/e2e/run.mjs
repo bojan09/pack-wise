@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.7.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.8.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -51,15 +51,23 @@ async function test(name, fn, { sw = false, viewport = { width: 390, height: 844
 // ----------------------------------------------------------------- helpers
 const skipWelcome = (page) => page.addInitScript(() => { try { if (!localStorage.getItem('packwise.prefs.v1')) localStorage.setItem('packwise.prefs.v1', JSON.stringify({ onboarded: true })); } catch { /* ignore */ } });
 
-async function createTrip(page, { dest = 'Rome, Italy', type = 'City', start = '2026-12-12', end = '2026-12-20', bags = [] } = {}) {
+async function createTrip(page, { dest = 'Rome, Italy', type = 'City', start = '2026-12-12', end = '2026-12-20', bags = [], scope = 'abroad' } = {}) {
   await page.goto(`${BASE}#/trips/new`);
   await page.click(`label.tile:has-text("${type}")`);
   await page.fill('input[name=destination]', dest);
   if (start) await page.fill('input[name=start]', start);
   if (end) await page.fill('input[name=end]', end);
   for (const b of bags) await page.click(`label.tile:has-text("${b}")`);
-  await page.click('button:has-text("Generate Packing List")');
+  if (scope) await page.click(`label.seg-opt:has-text("${scope === 'domestic' ? 'Within my country' : 'Abroad'}")`);
+  await generate(page);
   await page.waitForSelector('h1:has-text("' + dest + '")');
+}
+
+/** Click Generate; new trips must choose a scope, so pick Abroad unless the test already did. */
+async function generate(page) {
+  const chosen = await page.evaluate(() => Boolean(document.querySelector('input[name=scope]:checked')));
+  if (!chosen) await page.click('label.seg-opt:has-text("Abroad")');
+  await page.click('button:has-text("Generate Packing List")');
 }
 
 const pct = (page) => page.locator('section[aria-label="Packing summary"] [role=progressbar]').getAttribute('aria-valuenow').then(Number);
@@ -85,18 +93,18 @@ await test('first visit shows welcome, Get Started leads to create trip', async 
 await test('create trip validates input and generates an editable starter list', async ({ page }) => {
   await skipWelcome(page);
   await page.goto(`${BASE}#/trips/new`);
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('.form-errors .field-error');
   assert.ok(page.url().endsWith('#/trips/new'));
   await page.fill('input[name=destination]', 'Oslo');
   await page.fill('input[name=start]', '2026-12-20');
   await page.fill('input[name=end]', '2026-12-10');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('text=on or after the departure');
   await page.fill('input[name=end]', '2026-12-22');
   await page.click('label.tile:has-text("Winter")');
   await page.click('label.tile:has-text("Checked")');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Oslo")');
   const st = await tripState(page);
   assert.equal(st.trips.length, 1);
@@ -795,7 +803,7 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   await page.click('a[aria-label],a:has-text("Use") >> nth=0').catch(() => {});
   await page.goto(`${BASE}#/trips/new?template=${(await tripState(page)).templates[0].id}`);
   await page.fill('input[name=destination]', 'From template');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("From template")');
   let st = await tripState(page);
   const created = st.trips.find((t) => t.name === 'From template');
@@ -807,7 +815,7 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   // built-in: weekend template via the form; camping has a tent
   await page.goto(`${BASE}#/trips/new?template=builtin-camping`);
   await page.fill('input[name=destination]', 'Woods');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Woods")');
   assert.ok((await tripState(page)).items.some((i) => /^Tent/.test(i.name)));
   // customize a built-in and save to My templates
@@ -821,7 +829,7 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   await page.fill('input[name=destination]', 'Copycat');
   await page.click('label.seg-opt:has-text("Previous trip")');
   await page.selectOption('select[name=copyFrom]', src);
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Copycat")');
   st = await tripState(page);
   const copy = st.trips.find((t) => t.name === 'Copycat');
@@ -833,7 +841,7 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   await page.fill('input[name=destination]', 'Arctic');
   await page.click('label.seg-opt:has-text("Winter")');
   await page.click('label.cond-chip:has-text("Cold")');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Arctic")');
   assert.ok((await tripState(page)).items.some((i) => i.name === 'Gloves'));
   // delete a custom template with confirmation
@@ -987,7 +995,7 @@ await test('create trip: camping auto-suggests camping gear + backpack; season a
   await page.click('label.seg-opt:has-text("Fall")');
   await page.click('label.cond-chip:has-text("Cool")');
   await page.click('label.cond-chip:has-text("Rainy")');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Pine Lake")');
   await page.waitForSelector('text=Fall · Cool, Rainy');
   const st = await tripState(page);
@@ -1038,7 +1046,7 @@ await test('season is suggested from Balkan dates and respects a manual choice',
   await page.fill('input[name=end]', '2026-08-05');
   assert.equal(await season(), 'spring');
   await page.fill('input[name=destination]', 'Ohrid');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Ohrid")');
   assert.equal((await tripState(page)).trips[0].season, 'spring');
   // a fresh trip with summer dates gets the summer list without touching the season control
@@ -1046,7 +1054,7 @@ await test('season is suggested from Balkan dates and respects a manual choice',
   await page.fill('input[name=destination]', 'Budva');
   await page.fill('input[name=start]', '2026-07-01');
   await page.fill('input[name=end]', '2026-07-08');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Budva")');
   const st = await tripState(page);
   const budva = st.trips.find((t) => t.name === 'Budva');
@@ -1398,6 +1406,9 @@ await test('keyboard: skip link, full create-trip flow and dialog use without a 
   await page.keyboard.press('ArrowRight');
   assert.notEqual(await page.evaluate(() => document.querySelector('input[name=type]:checked').value), 'city');
   await page.fill('input[name=destination]', 'Keyboardia');
+  await page.focus('input[name=scope]'); // the first option is Abroad
+  await page.keyboard.press('Space');
+  assert.equal(await page.evaluate(() => document.querySelector('input[name=scope]:checked')?.value), 'abroad');
   await page.focus('input[name=destination]');
   await page.keyboard.press('Enter'); // submit from the text field
   await page.waitForSelector('h1:has-text("Keyboardia")');
@@ -1439,7 +1450,7 @@ await test('critical workflow: first visit → trip → pack → bag change → 
   await page.fill('input[name=start]', '2026-07-05');
   await page.fill('input[name=end]', '2026-07-12');
   await page.click('label.tile:has-text("Checked")');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Budva, Montenegro")');
   await page.waitForSelector('text=Summer');
   let st = await tripState(page);
@@ -1471,7 +1482,7 @@ await test('critical workflow: first visit → trip → pack → bag change → 
   await page.evaluate((tid) => window.__packwise.store.saveTripAsTemplate(tid, 'Beach basics'), trip.id);
   await page.goto(`${BASE}#/trips/new?template=${(await tripState(page)).templates[0].id}`);
   await page.fill('input[name=destination]', 'Ohrid');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Ohrid")');
   // return trip
   await page.goto(`${BASE}#/trip/${trip.id}/summary`);
@@ -2064,7 +2075,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.7.0']);
+  assert.deepEqual(keys, ['packwise-v1.8.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2104,7 +2115,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.7.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.8.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2780,7 +2791,7 @@ await test('trip scope: "within my country" skips abroad-only tasks and items; t
   await page.click('label.seg-opt:has-text("Within my country")');
   await page.fill('input[name=start]', '2026-11-29');
   await page.fill('input[name=end]', '2026-12-01');
-  await page.click('button:has-text("Generate Packing List")');
+  await generate(page);
   await page.waitForSelector('h1:has-text("Veles")');
   st = await tripState(page);
   const veles = st.trips.find((t) => t.name === 'Veles - Babuna');
@@ -2800,9 +2811,32 @@ await test('trip scope: "within my country" skips abroad-only tasks and items; t
   await page.waitForSelector('.scope-banner', { state: 'detached' });
   await page.click('.toasts button:has-text("Undo")');
   await page.waitForSelector('.scope-banner');
-  // old trips (no scope stored) behave like abroad and show no banner
+  // a trip with no scope yet (made before this existed) is ASKED, on both the tasks and packing pages, and behaves like abroad meanwhile
   await page.evaluate((tid) => { const s = window.__packwise.store; s.updateTrip(tid, { scope: '' }); }, veles.id);
   await page.waitForSelector('.scope-banner', { state: 'detached' });
+  await page.waitForSelector('.scope-ask');
+  assert.match(await page.locator('.scope-ask').innerText(), /Within your country or abroad\?/);
+  await page.goto(`${BASE}#/trip/${veles.id}`);
+  await page.waitForSelector('.scope-ask');
+  await page.click('.scope-ask button:has-text("Within my country")');
+  await page.waitForSelector('.scope-ask', { state: 'detached' });
+  assert.equal((await tripState(page)).trips.find((x) => x.id === veles.id).scope, 'domestic');
+  // answering "within my country" on a trip that still lists abroad-only items offers to remove them too (never automatically)
+  await page.evaluate((tid) => { const s = window.__packwise.store; s.addItem(tid, { name: 'Travel adapter', category: 'electronics', target: 1 }); }, veles.id);
+  await page.waitForSelector('.scope-banner');
+  assert.match(await page.locator('.scope-banner').innerText(), /travel adapter/);
+  assert.ok((await tripState(page)).items.some((i) => i.tripId === veles.id && i.name === 'Travel adapter'), 'not removed until tapped');
+  await page.click('.scope-banner button:has-text("Remove")'); // the restored insurance task is still listed too, so "Remove them"
+  await page.waitForFunction((tid) => !window.__packwise.store.state.items.some((i) => i.tripId === tid && i.name === 'Travel adapter'), veles.id);
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForFunction((tid) => window.__packwise.store.state.items.some((i) => i.tripId === tid && i.name === 'Travel adapter'), veles.id);
+  await page.evaluate((tid) => { const s = window.__packwise.store; s.updateTrip(tid, { scope: '' }); }, veles.id);
+  // creating a new trip REQUIRES an answer
+  await page.goto(`${BASE}#/trips/new`);
+  await page.fill('input[name=destination]', 'Ohrid');
+  await page.click('button:has-text("Generate Packing List")');
+  assert.match(await page.locator('.form-errors').innerText(), /Choose whether this trip is within your country or abroad/);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('name')), 'scope');
   // home country in Settings pre-selects the scope from the destination
   await page.goto(`${BASE}#/settings?tab=preferences`);
   await page.selectOption('select[name=homeCountry]', 'RS');
@@ -2892,6 +2926,40 @@ await test('unsupported destination: friendly plan-it-yourself page, own places 
   await page.waitForSelector('text=No built-in food guide');
 });
 
+
+await test('mobile: the More tab reaches every feature the desktop sidebar has; desktop shows Settings instead', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}#/`);
+  const visibleNav = () => page.evaluate(() => [...document.querySelectorAll('.nav-list li')].filter((li) => li.offsetParent !== null).map((li) => li.querySelector('.nav-short').textContent));
+  assert.deepEqual(await visibleNav(), ['Home', 'Trips', 'Pack', 'Tasks', 'More'], 'five bottom-bar tabs on a phone');
+  await page.click('.nav-item[data-nav=more]');
+  await page.waitForSelector('.more-list');
+  assert.ok(page.url().endsWith('#/more'));
+  assert.equal(await page.getAttribute('.nav-item[data-nav=more]', 'aria-current'), 'page');
+  const wanted = [['Packing Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Taste', `/trip/${id}/taste`, '.food-card'], ['My Guide', `/trip/${id}/guide`, '.guide-tab'], ['Templates', '/templates', 'h1'], ['Settings', '/settings', '[role=tab]']];
+  assert.deepEqual(await page.locator('.more-item strong').allInnerTexts(), wanted.map((w) => w[0]));
+  for (const [label, path, ready] of wanted) {
+    await page.goto(`${BASE}#/more`);
+    await page.click(`.more-item:has-text("${label}")`);
+    await page.waitForSelector(ready);
+    assert.ok(page.url().includes(path), `${label} -> ${page.url()}`);
+  }
+  // each More item works for a fresh install too (no trips): it sends you to create one instead of a dead end
+  await page.evaluate(() => window.__packwise.store.clearAll());
+  await page.goto(`${BASE}#/more`);
+  assert.equal(await page.locator('.more-item[href="#/trips/new"]').count(), 4);
+  // desktop: Settings is in the sidebar and More is hidden
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}#/`);
+  const wide = await visibleNav();
+  assert.ok(wide.includes('Settings') && !wide.includes('More') && wide.includes('Explore') && wide.includes('Studio') && wide.includes('Templates'));
+  await page.click('.nav-item[data-nav=settings]');
+  await page.waitForSelector('[role=tab]');
+  assert.equal(await page.getAttribute('.nav-item[data-nav=settings]', 'aria-current'), 'page');
+});
 
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');

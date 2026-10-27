@@ -211,3 +211,10 @@
     display: none !important;
   }
 }
+
+/* hidden whenever the side navigation is showing (>= 900px) */
+@media (min-width: 900px) {
+  .hide-sidebar {
+    display: none !important;
+  }
+}
