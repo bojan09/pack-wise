@@ -8,7 +8,7 @@ import { HOME_COUNTRIES, getPrefs } from '../prefs.js';
 import { getTrip, sortedTrips } from '../selectors.js';
 import { BUILTIN_TEMPLATES, builtinTemplateItems, defaultDays } from '../templates.js';
 import { seasonForDates, tripLengthDays } from '../progress.js';
-import { pageHeader } from './shared.js';
+import { pageHeader, reviewScopeChange } from './shared.js';
 
 export function TripFormScreen(ctx, { mode }) {
   const { store, navigate, params } = ctx;
@@ -95,9 +95,11 @@ export function TripFormScreen(ctx, { mode }) {
         }
         const fields = { name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, scope: form.scope, travelers: form.travelers, season: form.season, conditions: form.conditions, notes: form.notes };
         if (editing) {
+          const scopeChanged = fields.scope && fields.scope !== existing.scope;
           store.updateTrip(existing.id, fields);
           toast('Trip updated', { tone: 'success' });
           navigate(`/trip/${existing.id}`);
+          if (scopeChanged) reviewScopeChange({ store, tripId: existing.id }); // offers to bring the existing lists in line
         } else {
           const opts = { bagKinds: form.bagKinds, generate: form.startFrom === 'suggested' };
           const days = form.startDate && form.endDate ? tripLengthDays({ startDate: form.startDate, endDate: form.endDate }) : null;

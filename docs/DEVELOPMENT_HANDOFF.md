@@ -54,6 +54,11 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## v1.9.0: limits closed
+
+- **Scope change rewrites existing lists, on request**: `planScopeChange(scope, {tasks, items})` (pure, `templates.js`) plans add / remove / rename for generated reminders in both directions; `store.applyScopeChanges` / `undoScopeChanges` apply and revert them; `reviewScopeChange()` (`screens/shared.js`) shows a tick-list dialog after the edit form or the scope question banner. Nothing is changed without Apply; packed items, completed tasks and user-written entries are never touched.
+- **Phone navigation**: the bottom bar now has a tab for every destination (Home, Trips, Pack, Studio, Explore, Templates, Tasks, Settings) and scrolls sideways (`.nav-wrap` / `.nav-list`, edge fades via `data-more-left/right`, current tab auto-centred, focus scrolls into view). The More menu was removed. Desktop sidebar unchanged.
+
 ## v1.8.0: review fixes from a phone
 
 - **Mobile parity**: the bottom bar's *More* tab now opens `/more` (`screens/more.js`): Packing Studio, Explore, Taste, My Guide, Templates, Settings, each pointing at the current trip (or at "new trip" when there is none). The sidebar (>= 900px) shows *Settings* instead and hides *More* (`hide-sidebar`). `/guide` and `/taste` redirect to the current trip like `/explore`.

@@ -2,7 +2,8 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button, iconButton, progressBar } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
-import { ABROAD_ONLY_ITEMS, isAbroadOnlyTask } from '../templates.js';
+import { ABROAD_ONLY_ITEMS, isAbroadOnlyTask, planScopeChange } from '../templates.js';
+import { showDialog } from '../ui/dialog.js';
 import { destinationArt } from '../ui/art.js';
 import { CONDITIONS, SEASONS, TRIP_TYPES } from '../models.js';
 import { daysUntil, tripLengthDays, tripPhase, sumQty } from '../progress.js';
@@ -88,7 +89,7 @@ export function tripCard({ trip, state, href, onMenu, compact = false }) {
 export function scopeBanner(store, trip) {
   if (!trip) return null;
   if (!trip.scope) {
-    const set = (scope) => { store.updateTrip(trip.id, { scope }); };
+    const set = (scope) => { store.updateTrip(trip.id, { scope }); reviewScopeChange({ store, tripId: trip.id }); };
     return h('section', { class: 'banner banner-info scope-ask', 'aria-label': 'Where is this trip going?' },
       icon('compass', { size: 18 }),
       h('span', { class: 'scope-ask-text' }, h('strong', { text: 'Within your country or abroad?' }), h('span', { class: 'muted small block', text: 'Trips at home skip passport, insurance, bank-notice and adapter reminders.' })),
@@ -108,4 +109,31 @@ export function scopeBanner(store, trip) {
       const goneItems = items.map((i) => store.deleteItem(i.id)).filter(Boolean);
       toast(`Removed ${plural(goneTasks.length + goneItems.length, 'thing')}`, { action: { label: 'Undo', run: () => { goneTasks.forEach((t) => store.restoreTask(t)); goneItems.forEach((i) => store.restoreItem(i)); } } });
     } }));
+}
+
+/**
+ * After a trip's scope is set or changed: show what that would do to the lists that already exist and let the
+ * user tick what to apply. Skipped when there is nothing to change. Every applied change is undoable.
+ */
+export async function reviewScopeChange({ store, tripId }) {
+  const trip = store.state.trips.find((t) => t.id === tripId);
+  if (!trip?.scope) return;
+  const changes = planScopeChange(trip.scope, { tasks: tripTasks(store.state, tripId), items: tripItems(store.state, tripId) });
+  if (!changes.length) return;
+  const packedKept = trip.scope === 'domestic' ? tripItems(store.state, tripId).filter((i) => ABROAD_ONLY_ITEMS.includes(i.name) && i.packed > 0).map((i) => i.name) : [];
+  const chosen = await showDialog({
+    title: trip.scope === 'domestic' ? 'Trim the lists for a trip at home?' : 'Add the reminders for a trip abroad?',
+    build: (close) => {
+      const picked = new Set(changes.map((c) => c.id));
+      const rows = changes.map((c) => h('li', {}, h('label', { class: 'pick-row' }, h('input', { type: 'checkbox', class: 'check', checked: true, 'aria-label': c.label, onChange: (e) => { if (e.target.checked) picked.add(c.id); else picked.delete(c.id); } }), h('span', { class: 'pick-name', text: c.label }))));
+      return h('div', { class: 'dialog-stack' },
+        h('p', { class: 'muted small', text: 'Your lists already exist, so PackWise will not rewrite them on its own. Tick what to change; nothing else is touched, and you can undo it afterwards.' }),
+        h('ul', { class: 'pick-list' }, rows),
+        packedKept.length ? h('p', { class: 'muted small', text: `Already packed, so kept: ${packedKept.join(', ')}.` }) : null,
+        h('div', { class: 'dialog-actions' }, button({ label: 'Keep my lists as they are', variant: 'ghost', onClick: () => close([]) }), button({ label: 'Apply selected', variant: 'primary', key: 'apply-scope', onClick: () => close(changes.filter((c) => picked.has(c.id))) })));
+    },
+  });
+  if (!chosen?.length) return;
+  const undo = store.applyScopeChanges(tripId, chosen);
+  toast(`Updated ${plural(chosen.length, 'thing')}`, { tone: 'success', action: { label: 'Undo', run: () => store.undoScopeChanges(undo) } });
 }

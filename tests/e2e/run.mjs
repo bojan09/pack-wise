@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.8.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.9.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -2075,7 +2075,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.8.0']);
+  assert.deepEqual(keys, ['packwise-v1.9.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2115,7 +2115,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.8.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.9.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2820,6 +2820,10 @@ await test('trip scope: "within my country" skips abroad-only tasks and items; t
   await page.waitForSelector('.scope-ask');
   await page.click('.scope-ask button:has-text("Within my country")');
   await page.waitForSelector('.scope-ask', { state: 'detached' });
+  await page.waitForSelector('dialog[open]'); // an existing list is reviewed, not silently rewritten
+  assert.match(await page.locator('dialog').innerText(), /Remove task “Buy travel insurance”/);
+  await page.click('dialog button:has-text("Keep my lists as they are")');
+  await page.waitForSelector('dialog', { state: 'detached' });
   assert.equal((await tripState(page)).trips.find((x) => x.id === veles.id).scope, 'domestic');
   // answering "within my country" on a trip that still lists abroad-only items offers to remove them too (never automatically)
   await page.evaluate((tid) => { const s = window.__packwise.store; s.addItem(tid, { name: 'Travel adapter', category: 'electronics', target: 1 }); }, veles.id);
@@ -2854,6 +2858,44 @@ await test('trip scope: "within my country" skips abroad-only tasks and items; t
   await page.press('input[name=destination]', 'Tab');
   await page.waitForTimeout(300);
   assert.equal(await page.locator('input[name=scope][value=abroad]').isChecked(), true, 'a manual choice is never overridden');
+});
+
+await test('changing a trip\'s scope later offers to bring its existing lists in line (tick, apply, undo)', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Rome, Italy' }); // abroad
+  const id = await firstTrip(page);
+  const lists = async () => { const st = await tripState(page); return { items: st.items.filter((i) => i.tripId === id).map((i) => i.name).sort(), tasks: st.tasks.filter((t) => t.tripId === id).map((t) => t.title).sort() }; }; // sorted: storage order is not list order
+  const before = await lists();
+  assert.ok(before.items.includes('Travel adapter') && before.tasks.includes('Buy travel insurance'));
+  // abroad -> within my country, from Edit trip
+  await page.goto(`${BASE}#/trip/${id}/edit`);
+  await page.click('label.seg-opt:has-text("Within my country")');
+  await page.click('button:has-text("Save changes")');
+  await page.waitForSelector('dialog[open]');
+  const txt = await page.locator('dialog').innerText();
+  assert.match(txt, /Trim the lists for a trip at home\?/);
+  for (const w of ['Remove task “Buy travel insurance”', 'Remove task “Notify bank about travel”', 'Remove item “Travel adapter”', 'Rename item “ID / Passport” to “ID card / driving licence”', 'Rename task “Check passport / ID validity” to “Check your ID is valid”']) assert.ok(txt.includes(w), w);
+  assert.deepEqual(await lists(), before, 'nothing changes until Apply');
+  // untick one, apply the rest
+  await page.uncheck('dialog input[aria-label="Remove item “Travel adapter”"]');
+  await page.click('dialog button:has-text("Apply selected")');
+  await page.waitForFunction((tid) => !window.__packwise.store.state.tasks.some((t) => t.tripId === tid && t.title === 'Buy travel insurance'), id);
+  let now = await lists();
+  assert.ok(now.items.includes('Travel adapter'), 'the unticked item stays');
+  assert.ok(now.items.includes('ID card / driving licence') && !now.items.includes('ID / Passport'));
+  assert.ok(now.tasks.includes('Check your ID is valid') && !now.tasks.includes('Notify bank about travel'));
+  // undo puts everything back exactly
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForFunction((tid) => window.__packwise.store.state.tasks.some((t) => t.tripId === tid && t.title === 'Buy travel insurance'), id);
+  assert.deepEqual(await lists(), before);
+  // going to "abroad" on a list that already has everything opens no dialog (nothing to do)
+  await page.goto(`${BASE}#/trip/${id}/edit`);
+  await page.click('label.seg-opt:has-text("Abroad")');
+  await page.click('button:has-text("Save changes")');
+  await page.waitForSelector('h1');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  assert.equal((await tripState(page)).trips[0].scope, 'abroad');
 });
 
 await test('unsupported destination: friendly plan-it-yourself page, own places flow into My Guide with day, packing idea and text', async ({ page }) => {
@@ -2927,38 +2969,43 @@ await test('unsupported destination: friendly plan-it-yourself page, own places 
 });
 
 
-await test('mobile: the More tab reaches every feature the desktop sidebar has; desktop shows Settings instead', async ({ page }) => {
+await test('mobile: every feature is a tab in a sideways-scrolling bottom bar that keeps the current tab in view; desktop sidebar has the same set', async ({ page }) => {
   await skipWelcome(page);
   await createTrip(page, { dest: 'Belgrade, Serbia' });
   const id = await firstTrip(page);
+  const ALL = ['Home', 'Trips', 'Pack', 'Studio', 'Explore', 'Templates', 'Tasks', 'Settings'];
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}#/`);
-  const visibleNav = () => page.evaluate(() => [...document.querySelectorAll('.nav-list li')].filter((li) => li.offsetParent !== null).map((li) => li.querySelector('.nav-short').textContent));
-  assert.deepEqual(await visibleNav(), ['Home', 'Trips', 'Pack', 'Tasks', 'More'], 'five bottom-bar tabs on a phone');
-  await page.click('.nav-item[data-nav=more]');
-  await page.waitForSelector('.more-list');
-  assert.ok(page.url().endsWith('#/more'));
-  assert.equal(await page.getAttribute('.nav-item[data-nav=more]', 'aria-current'), 'page');
-  const wanted = [['Packing Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Taste', `/trip/${id}/taste`, '.food-card'], ['My Guide', `/trip/${id}/guide`, '.guide-tab'], ['Templates', '/templates', 'h1'], ['Settings', '/settings', '[role=tab]']];
-  assert.deepEqual(await page.locator('.more-item strong').allInnerTexts(), wanted.map((w) => w[0]));
-  for (const [label, path, ready] of wanted) {
-    await page.goto(`${BASE}#/more`);
-    await page.click(`.more-item:has-text("${label}")`);
+  const tabs = () => page.locator('.nav-item .nav-short').allInnerTexts();
+  assert.deepEqual(await tabs(), ALL, 'every destination is a tab on a phone');
+  assert.equal(await page.locator('.nav-item[data-nav=more]').count(), 0, 'no hidden "More" menu any more');
+  // it scrolls sideways, not the page, and the fade hints appear at the overflowing edge
+  const geo = await page.evaluate(() => { const l = document.querySelector('.nav-list'); return { scrolls: l.scrollWidth > l.clientWidth, page: document.documentElement.scrollWidth <= window.innerWidth, right: document.querySelector('.nav-wrap').dataset.moreRight }; });
+  assert.deepEqual([geo.scrolls, geo.page, geo.right], [true, true, 'true']);
+  // every tab is reachable by tapping (the bar scrolls it into view) and ends on the right screen
+  const targets = [['Trips', '/trips', 'h1'], ['Pack', `/trip/${id}`, '.category-card'], ['Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Templates', '/templates', 'h1'], ['Tasks', `/trip/${id}/tasks`, '.task-row'], ['Settings', '/settings', '[role=tab]'], ['Home', '/', 'h1']];
+  for (const [label, path, ready] of targets) {
+    await page.click(`.nav-item:has-text("${label}")`);
     await page.waitForSelector(ready);
-    assert.ok(page.url().includes(path), `${label} -> ${page.url()}`);
+    assert.ok(page.url().endsWith(`#${path}`) || page.url().includes(path), `${label} -> ${page.url()}`);
+    await page.waitForFunction((n) => document.querySelector(`.nav-item[data-nav=${n}]`)?.getAttribute('aria-current') === 'page', label.toLowerCase());
+    const inView = await page.evaluate(() => { const a = document.querySelector('.nav-item[aria-current=page]').getBoundingClientRect(); return a.left >= -1 && a.right <= window.innerWidth + 1; });
+    assert.ok(inView, `${label} tab is fully on screen`);
   }
-  // each More item works for a fresh install too (no trips): it sends you to create one instead of a dead end
-  await page.evaluate(() => window.__packwise.store.clearAll());
-  await page.goto(`${BASE}#/more`);
-  assert.equal(await page.locator('.more-item[href="#/trips/new"]').count(), 4);
-  // desktop: Settings is in the sidebar and More is hidden
+  // 44px-ish touch targets and labels at 360px
+  await page.setViewportSize({ width: 360, height: 740 });
+  const box = await page.evaluate(() => { const r = document.querySelector('.nav-item').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  assert.ok(box[0] >= 64 && box[1] >= 44, `tab size ${box}`);
+  // keyboard: Tab reaches a tab that is off screen and scrolls to it
+  await page.focus('.nav-item[data-nav=home]');
+  for (let n = 0; n < 7; n += 1) await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.nav), 'settings');
+  assert.ok(await page.evaluate(() => { const a = document.activeElement.getBoundingClientRect(); return a.right <= window.innerWidth + 1 && a.left >= -1; }), 'focused tab scrolled into view');
+  // desktop: the sidebar lists the same destinations, no scrolling
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${BASE}#/`);
-  const wide = await visibleNav();
-  assert.ok(wide.includes('Settings') && !wide.includes('More') && wide.includes('Explore') && wide.includes('Studio') && wide.includes('Templates'));
-  await page.click('.nav-item[data-nav=settings]');
-  await page.waitForSelector('[role=tab]');
-  assert.equal(await page.getAttribute('.nav-item[data-nav=settings]', 'aria-current'), 'page');
+  assert.deepEqual(await page.locator('.nav-item .nav-long').allInnerTexts(), ['Dashboard', 'My Trips', 'Packing List', 'Packing Studio', 'Explore', 'Templates', 'Travel Tasks', 'Settings']);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.nav-list')).overflowX), 'visible');
 });
 
 await test('precache list covers every runtime file and versions agree', async () => {

@@ -185,3 +185,49 @@ test('scope is stored on the trip, validated, drives generation, and survives ba
 test('home-country choices match the destination catalog', () => {
   assert.deepEqual(HOME_COUNTRIES.map((c) => [c.id, c.label]), CATALOG.countries.map((c) => [c.id, c.name]));
 });
+
+import { planScopeChange } from '../../js/templates.js';
+
+test('planScopeChange: only generated, unpacked things are touched; both directions; nothing for custom items', async () => {
+  const { store } = await fresh();
+  const trip = store.createTrip({ name: 'A', destination: 'Rome', type: 'city', scope: 'abroad', transport: 'train' }, { bagKinds: ['carry-on'] });
+  const lists = () => ({ tasks: store.state.tasks.filter((t) => t.tripId === trip.id), items: store.state.items.filter((i) => i.tripId === trip.id) });
+  const home = planScopeChange('domestic', lists());
+  assert.deepEqual(home.map((c) => c.kind).sort(), ['item-remove', 'item-remove', 'item-rename', 'task-remove', 'task-remove', 'task-rename']);
+  assert.equal(planScopeChange('abroad', lists()).length, 0, 'already abroad: nothing to add');
+  // a packed adapter stays; a done insurance task stays; custom items are never matched
+  const adapter = lists().items.find((i) => i.name === 'Travel adapter');
+  store.setPacked(adapter.id, 1);
+  store.toggleTask(lists().tasks.find((t) => t.title === 'Buy travel insurance').id);
+  store.addItem(trip.id, { name: 'My own adapter', category: 'electronics', target: 1 });
+  const again = planScopeChange('domestic', lists());
+  assert.ok(!again.some((c) => c.ref === adapter.id), 'packed item kept');
+  assert.ok(!again.some((c) => /insurance$/.test(c.label) && c.kind === 'task-remove'), 'done task kept');
+  assert.ok(!again.some((c) => /My own adapter/.test(c.label)));
+  assert.deepEqual(planScopeChange('', lists()), []);
+});
+
+test('applying a scope change rewrites the existing lists in both directions, and undo restores everything exactly', async () => {
+  const { store } = await fresh();
+  const trip = store.createTrip({ name: 'A', destination: 'Rome', type: 'city', scope: 'abroad' }, { bagKinds: ['carry-on'] });
+  const snap = () => JSON.stringify([store.state.tasks, store.state.items].map((l) => l.filter((x) => x.tripId === trip.id).map((x) => [x.id, x.title || x.name, x.packed, x.done]).sort()));
+  const before = snap();
+  const toHome = planScopeChange('domestic', { tasks: store.state.tasks.filter((t) => t.tripId === trip.id), items: store.state.items.filter((i) => i.tripId === trip.id) });
+  const undoHome = store.applyScopeChanges(trip.id, toHome);
+  const names = () => store.state.items.filter((i) => i.tripId === trip.id).map((i) => i.name);
+  const titles = () => store.state.tasks.filter((t) => t.tripId === trip.id).map((t) => t.title);
+  assert.ok(!names().includes('Travel adapter') && !names().includes('ID / Passport') && names().includes('ID card / driving licence'));
+  assert.ok(!titles().includes('Buy travel insurance') && titles().includes('Check your ID is valid'));
+  store.undoScopeChanges(undoHome);
+  assert.equal(snap(), before, 'undo restores the lists exactly');
+  // home -> abroad on a list generated for home brings the reminders back
+  const home = store.createTrip({ name: 'H', destination: 'Veles', type: 'city', scope: 'domestic', transport: 'car' }, { bagKinds: ['carry-on'] });
+  const lists = () => ({ tasks: store.state.tasks.filter((t) => t.tripId === home.id), items: store.state.items.filter((i) => i.tripId === home.id) });
+  const toAbroad = planScopeChange('abroad', lists());
+  assert.deepEqual(toAbroad.map((c) => c.kind).sort(), ['item-add', 'item-add', 'item-rename', 'task-add', 'task-add', 'task-rename']);
+  store.applyScopeChanges(home.id, toAbroad);
+  const l = lists();
+  assert.ok(l.items.some((i) => i.name === 'Travel adapter') && l.items.some((i) => i.name === 'ID / Passport') && l.tasks.some((t) => t.title === 'Notify bank about travel') && l.tasks.some((t) => t.title === 'Check passport / ID validity'));
+  assert.equal(planScopeChange('abroad', lists()).length, 0, 'idempotent');
+  assert.equal(store.applyScopeChanges('nope', toAbroad), null);
+});

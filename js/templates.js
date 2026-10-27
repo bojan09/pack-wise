@@ -122,6 +122,40 @@ export const ABROAD_ONLY_TASKS = ['Buy travel insurance', 'Notify bank about tra
 export const ABROAD_ONLY_ITEMS = ['Travel adapter', 'Travel insurance details'];
 export const isAbroadOnlyTask = (title) => ABROAD_ONLY_TASKS.includes(title);
 
+const TASK_ABROAD_ID = 'Check passport / ID validity';
+const TASK_HOME_ID = 'Check your ID is valid';
+const ITEM_ABROAD_ID = 'ID / Passport';
+const ITEM_HOME_ID = 'ID card / driving licence';
+const ABROAD_ITEM_SEEDS = [{ name: 'Travel adapter', category: 'electronics' }, { name: 'Travel insurance details', category: 'documents' }];
+
+/**
+ * What changing a trip's scope would do to a list that already exists. Pure. It only ever touches things the app
+ * itself generates (matched by exact name): nothing the user wrote is renamed or removed, and an item that is
+ * already packed is left alone. The caller shows these and applies only what the user ticks.
+ * @returns {{id: string, kind: 'task-remove'|'item-remove'|'task-rename'|'item-rename'|'task-add'|'item-add', label: string, ref?: string, to?: string, seed?: object}[]}
+ */
+export function planScopeChange(scope, { tasks = [], items = [] } = {}) {
+  const out = [];
+  const taskNamed = (n) => tasks.find((x) => x.title === n);
+  const itemNamed = (n) => items.find((x) => x.name === n);
+  if (scope === 'domestic') {
+    for (const x of tasks) if (isAbroadOnlyTask(x.title) && !x.done) out.push({ id: `task-remove:${x.id}`, kind: 'task-remove', ref: x.id, label: `Remove task “${x.title}”` });
+    const idTask = taskNamed(TASK_ABROAD_ID);
+    if (idTask && !idTask.done) out.push({ id: `task-rename:${idTask.id}`, kind: 'task-rename', ref: idTask.id, to: TASK_HOME_ID, label: `Rename task “${TASK_ABROAD_ID}” to “${TASK_HOME_ID}”` });
+    for (const x of items) if (ABROAD_ONLY_ITEMS.includes(x.name) && x.packed === 0) out.push({ id: `item-remove:${x.id}`, kind: 'item-remove', ref: x.id, label: `Remove item “${x.name}”` });
+    const idItem = itemNamed(ITEM_ABROAD_ID);
+    if (idItem) out.push({ id: `item-rename:${idItem.id}`, kind: 'item-rename', ref: idItem.id, to: ITEM_HOME_ID, label: `Rename item “${ITEM_ABROAD_ID}” to “${ITEM_HOME_ID}”` });
+  } else if (scope === 'abroad') {
+    const idTask = taskNamed(TASK_HOME_ID);
+    if (idTask) out.push({ id: `task-rename:${idTask.id}`, kind: 'task-rename', ref: idTask.id, to: TASK_ABROAD_ID, label: `Rename task “${TASK_HOME_ID}” to “${TASK_ABROAD_ID}”` });
+    for (const title of ABROAD_ONLY_TASKS) if (!taskNamed(title)) out.push({ id: `task-add:${title}`, kind: 'task-add', seed: { title, phase: 'before' }, label: `Add task “${title}”` });
+    for (const seed of ABROAD_ITEM_SEEDS) if (!itemNamed(seed.name)) out.push({ id: `item-add:${seed.name}`, kind: 'item-add', seed: { ...seed, target: 1 }, label: `Add item “${seed.name}”` });
+    const idItem = itemNamed(ITEM_HOME_ID);
+    if (idItem) out.push({ id: `item-rename:${idItem.id}`, kind: 'item-rename', ref: idItem.id, to: ITEM_ABROAD_ID, label: `Rename item “${ITEM_HOME_ID}” to “${ITEM_ABROAD_ID}”` });
+  }
+  return out;
+}
+
 export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], season = '', conditions = [], scope = '' } = {}) {
   const d = clamp(Math.round(days || defaultDays(type)), 1, 60);
   const compact = bagKinds.length > 0 && bagKinds.every((k) => k === 'backpack' || k === 'carry-on');

@@ -543,6 +543,31 @@ export function createStore(adapter) {
   const setTried = (tripId, kind, refId, tried) => patchEntry(tripId, kind, refId, { tried: tried === true });
   const setNote = (tripId, kind, refId, note) => patchEntry(tripId, kind, refId, { note: String(note ?? '').trim() });
 
+  // ---- scope change: apply the changes the user ticked in one go; returns what is needed to undo it
+  function applyScopeChanges(tripId, changes) {
+    if (!find('trips', tripId)) return null;
+    const undo = { removedTasks: [], removedItems: [], addedTasks: [], addedItems: [], renamedTasks: [], renamedItems: [] };
+    for (const c of changes) {
+      if (c.kind === 'task-remove') { const r = deleteTask(c.ref); if (r) undo.removedTasks.push(r); }
+      else if (c.kind === 'item-remove') { const r = deleteItem(c.ref); if (r) undo.removedItems.push(r); }
+      else if (c.kind === 'task-rename') { const cur = find('tasks', c.ref); if (cur && updateTask(c.ref, { title: c.to })) undo.renamedTasks.push({ id: cur.id, title: cur.title }); }
+      else if (c.kind === 'item-rename') { const cur = find('items', c.ref); if (cur && updateItem(c.ref, { name: c.to })) undo.renamedItems.push({ id: cur.id, name: cur.name }); }
+      else if (c.kind === 'task-add') { const r = addTask(tripId, c.seed); if (r) undo.addedTasks.push(r.id); }
+      else if (c.kind === 'item-add') { const r = addItem(tripId, c.seed); if (r) undo.addedItems.push(r.id); }
+    }
+    return undo;
+  }
+
+  function undoScopeChanges(undo) {
+    if (!undo) return;
+    undo.addedTasks.forEach((id) => deleteTask(id));
+    undo.addedItems.forEach((id) => deleteItem(id));
+    undo.removedTasks.forEach((t) => restoreTask(t));
+    undo.removedItems.forEach((i) => restoreItem(i));
+    undo.renamedTasks.forEach((r) => updateTask(r.id, { title: r.title }));
+    undo.renamedItems.forEach((r) => updateItem(r.id, { name: r.name }));
+  }
+
   // ---- user-written places (kind 'custom'): for destinations the built-in guide does not cover
   const nextOrder_ = (tripId) => state.entries.filter((e) => e.tripId === tripId).length;
 
@@ -721,6 +746,8 @@ export function createStore(adapter) {
     deleteTemplate,
     saveTripAsTemplate,
     setSaved,
+    applyScopeChanges,
+    undoScopeChanges,
     addCustomPlace,
     editCustomPlace,
     removeEntry,
