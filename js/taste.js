@@ -22,7 +22,6 @@ export function foodForCountries(codes, food = FOOD) {
 }
 
 export const foodRef = (item) => item.id;
-export const getFood = (id, food = FOOD) => food.items.find((i) => i.id === id) || null;
 
 /** Which diet / allergen controls make sense for this list (a control that changes nothing is hidden). */
 export function availableDietFilters(items) {

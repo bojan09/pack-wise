@@ -65,6 +65,10 @@ The guide switch has a third tab, **My Guide**: everything saved from Places and
 - **Background colors:** Settings → Appearance has separate color choices for light mode (7) and dark mode (6); each applies only in its own mode, also when the theme is "System".
 - **Destinations without a built-in guide** (for example a small town or a trail) now get a *Plan it yourself* page: add **your own places** (name, type, area, note), which appear in My Guide with days, packing ideas and exports, plus search links for each stop. PackWise still shows no invented data for them.
 
+## Status: v1.7.0 (final polish done)
+
+All planned phases are complete: packing (lists, bags, Studio, templates, tasks, return trips, backup), then the Destination Discovery plan (Explore, Taste, My Guide) and a feedback round (item pictures, category colors, trip scope, background colors, own places). Read `docs/KNOWN_LIMITATIONS.md` before relying on the destination content, and `docs/PRIVACY.md` for what is stored and linked.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

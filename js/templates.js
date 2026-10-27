@@ -1,5 +1,5 @@
 // Deterministic, offline starter-list rules. Output is a suggestion the user can edit freely.
-import { BAG_KINDS, TRIP_TYPES } from './models.js';
+import { TRIP_TYPES } from './models.js';
 
 const it = (category, name, target = 1, essential = false) => ({ category, name, target, essential });
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -242,5 +242,3 @@ export function bagForCategory(category, bags) {
   }
   return bags[0].id;
 }
-
-export const bagKindLabel = (kind) => BAG_KINDS.find((k) => k.id === kind)?.label ?? 'Bag';

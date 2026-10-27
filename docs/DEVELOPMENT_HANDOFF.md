@@ -54,6 +54,20 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## Phase 6: final polish and production (v1.7.0)
+
+What was audited and what changed:
+- **Regression**: full unit (119) and e2e (97) suites green, including every original Phase 1-2 flow and the Discovery phases. New `tests/unit/robustness.test.js` fuzzes backup import (400 seeded hostile files: no throw, invariants hold: `0 <= packed <= target`, unique entry ids, no orphans, `day` 1..60, custom entries named) and abuses the guide logic with stale/hostile entries.
+- **Storage recovery / migrations**: v0→v1→v2→v3 chain tested in unit and in e2e against a real IndexedDB (v1 and v2 databases upgrade with a safety copy and no data loss); newer-than-app data is refused, not mangled.
+- **Offline integrity**: a test fails if a runtime file is missing from `PRECACHE` or versions disagree; lazy guide screens, catalogs, item art and own places are verified offline in e2e.
+- **Privacy**: `docs/PRIVACY.md` updated (what is stored where, what the outbound links contain). CSP unchanged (`connect-src 'self'`); e2e still fails on any request leaving the origin.
+- **Accessibility**: automated sweeps (names, headings, focus, overflow at 5 viewports, dark) now include Taste, My Guide and Settings colors; contrast is unit-tested for every background palette and category color in both themes. Still not run by hand: VoiceOver/NVDA/TalkBack.
+- **Performance**: `content-visibility: auto` on checklist rows cut the 500-item tap from ~450 ms to ~150 ms (the environment had slowed the previous build past the 400 ms limit). Guide/food/art code stays out of the first load via `lazy()`.
+- **Dead code**: removed unused exports (`tripProgress`, `dateBadge`, `getFood`, `bagKindLabel`).
+- **Docs**: `docs/KNOWN_LIMITATIONS.md` (the authoritative limits list), release checklist extended (content review, privacy, performance), `scripts/verify-catalog.mjs` + `npm run verify:catalog` documented. Version 1.7.0.
+- **Graceful data-source failures**: the app has no live data sources. The only network-touching code is the dev script, which records per-place errors instead of aborting.
+- **Not done / needs access**: verified coordinates, photos and hours (network hosts blocked here); Safari/Firefox/real-device/screen-reader passes; Lighthouse on the live URL.
+
 ## v1.6.0: user feedback round (item art, category colors, scope, background colors, own places)
 
 - **Schema v3**: `entries.kind` gains `'custom'` (user-written places: `label` ≤80, `sub` ≤60, `type` ∈ `CUSTOM_TYPES`, ref = `customRef(label)`); `trips.scope` (`''|'abroad'|'domestic'`) and `trips.hiddenHints` are optional trip fields. Migration v2→v3 is a no-op (additive); an older build refuses newer data via the NEWER_DATA guard instead of dropping custom entries.

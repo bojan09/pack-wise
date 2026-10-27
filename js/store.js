@@ -666,7 +666,8 @@ export function createStore(adapter) {
       return;
     }
     const incoming = remapCollisions(data, state, newId);
-    await commit({ put: Object.fromEntries(COLLECTIONS.map((c) => [c, incoming[c]])) });
+    commit({ put: Object.fromEntries(COLLECTIONS.map((c) => [c, incoming[c]])) });
+    await queue; // resolve only once the data is on disk, like the replace path
   }
 
   async function clearAll() {

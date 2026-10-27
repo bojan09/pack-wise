@@ -1,6 +1,6 @@
 {
   "name": "packwise",
-  "version": "1.0.0",
+  "version": "1.7.0",
   "description": "PackWise — Smart Packing Companion. Offline-first vanilla PWA.",
   "private": true,
   "type": "module",
@@ -9,6 +9,7 @@
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:e2e": "node tests/e2e/run.mjs",
     "icons": "node scripts/make-icons.mjs",
+    "verify:catalog": "node scripts/verify-catalog.mjs",
     "check": "npm test && npm run test:e2e"
   }
 }

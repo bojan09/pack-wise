@@ -15,7 +15,6 @@ export function sumQty(items) {
   return { packed, target, percent, items: items.length, packedItems };
 }
 
-export const tripProgress = (items) => sumQty(items);
 export const bagProgress = (items, bagId) => sumQty(items.filter((i) => i.bagId === bagId));
 export const categoryProgress = (items, category) => sumQty(items.filter((i) => i.category === category));
 

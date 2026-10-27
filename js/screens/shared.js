@@ -3,7 +3,7 @@ import { icon } from '../ui/icons.js';
 import { iconButton, progressBar } from '../ui/components.js';
 import { destinationArt } from '../ui/art.js';
 import { CONDITIONS, SEASONS, TRIP_TYPES } from '../models.js';
-import { daysUntil, parseLocalDate, tripLengthDays, tripPhase, sumQty } from '../progress.js';
+import { daysUntil, tripLengthDays, tripPhase, sumQty } from '../progress.js';
 import { formatRange, plural } from '../format.js';
 import { tripItems } from '../selectors.js';
 
@@ -52,11 +52,6 @@ export function countdown(trip, now = new Date()) {
   }
   if (phase === 'past') return { value: 'Done', unit: '', sub: 'Welcome back!' };
   return { value: '—', unit: '', sub: 'Add dates to start the countdown' };
-}
-
-export function dateBadge(trip) {
-  const d = parseLocalDate(trip.startDate);
-  return d ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(d) : '';
 }
 
 /** Compact trip card used on My Trips and the dashboard's Recent Trips row. */

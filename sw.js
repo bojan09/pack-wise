@@ -1,6 +1,6 @@
 /* PackWise service worker: versioned app-shell precache, cache-first, offline-ready.
  * Bump CACHE_VERSION (and APP_VERSION in js/models.js) with every release. */
-const CACHE_VERSION = 'packwise-v1.6.0';
+const CACHE_VERSION = 'packwise-v1.7.0';
 
 const PRECACHE = [
   './',

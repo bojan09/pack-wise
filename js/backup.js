@@ -7,7 +7,7 @@ import { toast } from './ui/toast.js';
 import { plural } from './format.js';
 import { textFilename, tripToText } from './export.js';
 
-export function exportFilename(now = new Date()) {
+function exportFilename(now = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `packwise-backup-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.json`;
 }

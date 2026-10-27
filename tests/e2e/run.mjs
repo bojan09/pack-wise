@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.6.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.7.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -765,9 +765,9 @@ await test('checklist: bulk select (pack, unpack, move to bag, category, delete 
   // sort by priority puts high first within a category
   await page.evaluate((tid) => { const { store } = window.__packwise; const it = store.state.items.find((i) => i.tripId === tid && /jacket$/i.test(i.name)); store.updateItem(it.id, { priority: 'high', category: 'clothing' }); }, id); // Dec dates => winter => 'Warm jacket'
   await page.selectOption('select[name=sortBy]', 'priority');
-  assert.match(await page.locator(".category-card >> nth=0").locator(".item-name").first().innerText(), /jacket/i);
+  assert.match(await page.locator(".category-card >> nth=0").locator(".item-name").first().textContent(), /jacket/i); // textContent: rows below the fold use content-visibility, which empties innerText
   await page.selectOption('select[name=sortBy]', 'name');
-  const names = await page.locator('.category-card >> nth=0').locator('.item-name').allInnerTexts();
+  const names = (await page.locator('.category-card >> nth=0').locator('.item-name').allTextContents()).map((t) => t.trim());
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
 });
 
@@ -1489,6 +1489,7 @@ await test('critical workflow: first visit → trip → pack → bag change → 
   await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
   await page.click('dialog button:has-text("Import")');
   await page.waitForFunction((n) => window.__packwise.store.state.trips.length === n, before.trips.length);
+  await page.evaluate(() => window.__packwise.store.flush()); // let the queued write land before reloading
   await reloadSettled(page);
   const after = await tripState(page);
   const byId = (list) => [...list].sort((a, b) => a.id.localeCompare(b.id)); // storage order is by key, not insertion
@@ -2063,7 +2064,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.6.0']);
+  assert.deepEqual(keys, ['packwise-v1.7.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2103,7 +2104,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.6.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.7.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
