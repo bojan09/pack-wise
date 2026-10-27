@@ -69,13 +69,55 @@ export function createStore(adapter) {
     return queue;
   }
 
+  /**
+   * Load + migrate stored data. Safeguards: data written by a NEWER app version is never
+   * touched (throws NEWER_DATA so the UI can run read-nothing/write-nothing); before any
+   * migration rewrites the database, an untouched safety copy is kept.
+   */
   async function init() {
     const snap = await adapter.load();
-    const { data, changed } = migrate(snap, snap.schemaVersion);
-    for (const c of COLLECTIONS) state[c] = data[c] || [];
-    if (changed) await adapter.replaceAll(state);
+    if (snap.schemaVersion > SCHEMA_VERSION) {
+      throw Object.assign(new Error('Stored data was written by a newer version of PackWise.'), { code: 'NEWER_DATA' });
+    }
+    let migrated;
+    try {
+      migrated = migrate(snap, snap.schemaVersion);
+    } catch (err) {
+      throw Object.assign(err, { code: 'MIGRATION_FAILED' });
+    }
+    if (migrated.changed) {
+      try {
+        await adapter.saveSafetyCopy?.({ fromVersion: snap.schemaVersion, savedAt: nowIso(), data: Object.fromEntries(COLLECTIONS.map((c) => [c, snap[c] || []])) });
+      } catch {
+        /* a failed safety copy must not block the user's data from loading */
+      }
+    }
+    for (const c of COLLECTIONS) state[c] = migrated.data[c] || [];
+    if (migrated.changed) {
+      try {
+        await adapter.replaceAll(state);
+      } catch (err) {
+        state.saveError = describeStorageError(err);
+      }
+    }
     state.loaded = true;
     emit();
+  }
+
+  /** Rewrite the whole in-memory state to storage (recovery after a failed write, e.g. quota). */
+  function resync() {
+    const snapshot = Object.fromEntries(COLLECTIONS.map((c) => [c, structuredClone(state[c])]));
+    queue = queue
+      .then(() => adapter.replaceAll(snapshot))
+      .then(() => {
+        state.saveError = null;
+        emit();
+      })
+      .catch((err) => {
+        state.saveError = describeStorageError(err);
+        emit();
+      });
+    return queue.then(() => !state.saveError);
   }
 
   const find = (coll, id) => state[coll].find((r) => r.id === id) || null;
@@ -486,6 +528,9 @@ export function createStore(adapter) {
 
   return {
     state,
+    adapter,
+    resync,
+    getSafetyCopy: () => adapter.loadSafetyCopy?.() ?? Promise.resolve(null),
     subscribe,
     init,
     flush: () => queue,

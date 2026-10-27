@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
 export const SCHEMA_VERSION = 1;
-export const APP_VERSION = '1.1.2';
+export const APP_VERSION = '1.2.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },

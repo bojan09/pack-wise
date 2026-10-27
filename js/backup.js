@@ -5,21 +5,63 @@ import { button } from './ui/components.js';
 import { showDialog, confirmDialog } from './ui/dialog.js';
 import { toast } from './ui/toast.js';
 import { plural } from './format.js';
+import { textFilename, tripToText } from './export.js';
 
 export function exportFilename(now = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `packwise-backup-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.json`;
 }
 
-export function downloadBackup(store) {
-  const json = JSON.stringify(store.exportData(), null, 2);
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-  const a = h('a', { href: url, download: exportFilename() });
+export function downloadFile(filename, text, mime = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = h('a', { href: url, download: filename });
   document.body.append(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+export function downloadBackup(store) {
+  downloadFile(exportFilename(), JSON.stringify(store.exportData(), null, 2));
   toast('Backup downloaded. Keep the file somewhere safe.', { tone: 'success' });
+}
+
+const tripSource = (state, id) => ({
+  trip: state.trips.find((t) => t.id === id),
+  bags: state.bags.filter((x) => x.tripId === id),
+  items: state.items.filter((x) => x.tripId === id),
+  tasks: state.tasks.filter((x) => x.tripId === id),
+});
+
+export function downloadTripText(store, tripId) {
+  const src = tripSource(store.state, tripId);
+  if (!src.trip) return;
+  downloadFile(textFilename(src.trip), tripToText(src), 'text/plain');
+  toast('Text list downloaded.', { tone: 'success' });
+}
+
+export async function copyTripText(store, tripId) {
+  const src = tripSource(store.state, tripId);
+  if (!src.trip) return;
+  try {
+    await navigator.clipboard.writeText(tripToText(src));
+    toast('List copied. Paste it into any app.', { tone: 'success' });
+  } catch {
+    toast('Copying was blocked by the browser. Use “Export as text” instead.', { tone: 'error' });
+  }
+}
+
+export function downloadAllText(store) {
+  const text = store.state.trips.map((t) => tripToText(tripSource(store.state, t.id))).join('\n\n----------------------------------------\n\n');
+  if (!text) { toast('There are no trips to export yet.'); return; }
+  downloadFile('packwise-all-trips.txt', text, 'text/plain');
+  toast('All trips downloaded as text.', { tone: 'success' });
+}
+
+/** A file in backup format built from the pre-upgrade safety copy (re-imports through the normal migration path). */
+export function downloadSafetyCopy(copy) {
+  const file = { app: 'packwise', schemaVersion: copy.fromVersion, exportedAt: copy.savedAt, data: copy.data };
+  downloadFile(`packwise-before-upgrade-${String(copy.savedAt).slice(0, 10)}.json`, JSON.stringify(file, null, 2));
 }
 
 function summary(counts) {

@@ -22,12 +22,13 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.1.2'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.2.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
 const results = [];
 async function test(name, fn, { sw = false, viewport = { width: 390, height: 844 }, ctxOptions = {} } = {}) {
+  if (process.env.E2E_GREP && !new RegExp(process.env.E2E_GREP, 'i').test(name)) return; // dev filter: E2E_GREP="haptics|print"
   const ctx = await browser.newContext({ viewport, serviceWorkers: sw ? 'allow' : 'block', acceptDownloads: true, ...ctxOptions });
   const page = await ctx.newPage();
   const problems = [];
@@ -319,7 +320,8 @@ await test('settings: theme persists, accent applies, name shows in greeting', a
   await page.click('label.seg-opt:has-text("Dark")');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
   await page.click('label.swatch[title="Coral"]');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-strong').trim()), '#C4573F');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-strong').trim()), '#B4492F');
+  await page.click('button[role=tab]:has-text("Preferences")');
   await page.fill('input[placeholder=Traveler]', 'Mira');
   await page.keyboard.press('Tab');
   await reloadSettled(page);
@@ -332,7 +334,7 @@ await test('backup: export -> corrupted import rejected -> good import merges ->
   await skipWelcome(page);
   await createTrip(page, { dest: 'Rome, Italy' });
   await page.check('input[aria-label^="T-shirts:"]');
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   assert.match(dl.suggestedFilename(), /^packwise-backup-\d{4}-\d{2}-\d{2}\.json$/);
   const path = await dl.path();
@@ -376,7 +378,7 @@ await test('backup: export -> corrupted import rejected -> good import merges ->
 await test('clear all data asks for confirmation and really clears (incl. after reload)', async ({ page }) => {
   await skipWelcome(page);
   await createTrip(page);
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=data`);
   await page.click('button:has-text("Clear data")');
   await page.click('dialog button:has-text("Cancel")');
   assert.equal((await tripState(page)).trips.length, 1);
@@ -441,7 +443,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
     assert.deepEqual(bad, [], `a11y issues on ${route}`);
   };
   const id = (await tripState(page)).trips[0].id;
-  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', '/settings']) await check(r);
+  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
 });
 
 await test('reduced motion disables animations; page still usable', async ({ page }) => {
@@ -887,7 +889,7 @@ await test('companion: contextual tips, dismiss persists, can be muted; readines
   await page.waitForSelector('.ready-chip:has-text("Ready to go")');
   await page.waitForSelector('.bubble-text:has-text("Everything is packed")');
   // mute in settings hides it everywhere
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=preferences`);
   await page.uncheck('input[name=companion]');
   await page.goto(`${BASE}#/`);
   await page.waitForSelector('.dashboard');
@@ -900,12 +902,12 @@ await test('companion: contextual tips, dismiss persists, can be muted; readines
 await test('sample data: added, clearly labelled, removable without touching user trips', async ({ page }) => {
   await skipWelcome(page);
   await createTrip(page, { dest: 'Mine' });
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=data`);
   await page.click('button:has-text("Add sample trip")');
   await page.waitForFunction(() => window.__packwise.store.state.trips.some((t) => t.isDemo));
   await page.goto(`${BASE}#/trips`);
   await page.waitForSelector('h3:has-text("Sample: Lisbon city break")');
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=data`);
   await page.click('button:has-text("Remove sample data")');
   await page.waitForFunction(() => !window.__packwise.store.state.trips.some((t) => t.isDemo));
   const st = await tripState(page);
@@ -918,7 +920,7 @@ await test('phase 2 data survives export/import (templates, return links, new fi
   await createTrip(page, { dest: 'Rome, Italy' });
   const src = await firstTrip(page);
   await page.evaluate((tid) => { const { store } = window.__packwise; store.saveTripAsTemplate(tid, 'Tpl'); store.createReturnTrip(tid, {}); store.updateTrip(tid, { season: 'winter', conditions: ['cold', 'rainy'] }); }, src);
-  await page.goto(`${BASE}#/settings`);
+  await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const json = readFileSync(await dl.path(), 'utf8');
   const before = await tripState(page);
@@ -1044,6 +1046,461 @@ await test('season is suggested from Balkan dates and respects a manual choice',
   assert.ok(st.items.some((i) => i.tripId === budva.id && i.name === 'Sunscreen'));
 });
 
+
+// ============================================================ PHASE 3
+// Raw IndexedDB access from the test side. (The app's CSP forbids eval, so each helper carries its own plain function.)
+const idbSetVersion = (page, value) => page.evaluate((v) => new Promise((resolve, reject) => {
+  const req = indexedDB.open('packwise');
+  req.onerror = () => reject(req.error);
+  req.onsuccess = () => { const db = req.result; const tx = db.transaction('meta', 'readwrite'); tx.objectStore('meta').put({ key: 'schemaVersion', value: v }); tx.oncomplete = () => { db.close(); resolve(); }; };
+}), value);
+const idbSnapshotRaw = (page) => page.evaluate(() => new Promise((resolve, reject) => {
+  const req = indexedDB.open('packwise');
+  req.onerror = () => reject(req.error);
+  req.onsuccess = () => { const db = req.result; const out = {}; const tx = db.transaction(['trips', 'meta'], 'readonly'); tx.objectStore('trips').getAll().onsuccess = (e) => { out.trips = e.target.result.map((t) => t.name); }; tx.objectStore('meta').get('schemaVersion').onsuccess = (e) => { out.version = e.target.result.value; }; tx.oncomplete = () => { db.close(); resolve(out); }; };
+}));
+const idbSeedLegacy = (page) => page.evaluate(() => new Promise((resolve, reject) => {
+  const req = indexedDB.open('packwise');
+  req.onerror = () => reject(req.error);
+  req.onsuccess = () => {
+    const db = req.result;
+    const tx = db.transaction(['trips', 'bags', 'items', 'meta'], 'readwrite');
+    ['trips', 'bags', 'items'].forEach((n) => tx.objectStore(n).clear());
+    tx.objectStore('trips').put({ id: 'old1', name: 'Legacy trip', status: 'active' });
+    tx.objectStore('bags').put({ id: 'oldb', tripId: 'old1', name: 'Bag', kind: 'other', order: 0 });
+    tx.objectStore('items').put({ id: 'oldi', tripId: 'old1', bagId: 'oldb', name: 'Old shirt', qty: 4, done: true });
+    tx.objectStore('meta').put({ key: 'schemaVersion', value: 0 });
+    tx.oncomplete = () => { db.close(); resolve(); };
+  };
+}));
+
+await test('settings: tabs (ARIA + arrow keys + deep link), background styles, motion', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings`);
+  const tabs = page.locator('[role=tab]');
+  assert.deepEqual(await tabs.allInnerTexts(), ['Appearance', 'Data', 'Preferences', 'About']);
+  assert.equal(await page.getAttribute('#tab-appearance', 'aria-selected'), 'true');
+  assert.equal(await page.getAttribute('[role=tabpanel]', 'aria-labelledby'), 'tab-appearance');
+  await page.focus('#tab-appearance');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.getAttribute('#tab-data', 'aria-selected'), 'true');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-data');
+  await page.keyboard.press('End');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-about');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-appearance'); // wraps
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  assert.equal(await page.getAttribute('#tab-preferences', 'aria-selected'), 'true');
+  // backgrounds
+  await page.goto(`${BASE}#/settings`);
+  assert.equal(await page.locator('.bg-opt').count(), 5);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.bg), 'default');
+  assert.equal(await page.locator('#bg-art svg').count(), 0);
+  for (const [name, expectArt] of [['Mountains', true], ['Beach', true], ['City', true], ['Minimal', false], ['Default', false]]) {
+    await page.click(`label.bg-opt:has-text("${name}")`);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.bg), name.toLowerCase());
+    assert.equal((await page.locator('#bg-art svg').count()) > 0, expectArt, name);
+  }
+  await page.click('label.bg-opt:has-text("Beach")');
+  await reloadSettled(page);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.bg), 'beach');
+  assert.ok((await page.locator('#bg-art svg').count()) > 0);
+  assert.equal(await page.getAttribute('#bg-art', 'aria-hidden'), 'true');
+});
+
+await test('haptics: off by default, vibrates only when enabled and supported', async ({ page }) => {
+  await page.addInitScript(() => { window.__vibes = []; navigator.vibrate = (p) => { window.__vibes.push(p); return true; }; });
+  await skipWelcome(page);
+  await createTrip(page);
+  const id = await firstTrip(page);
+  await page.check('input[aria-label^="T-shirts:"]');
+  assert.equal(await page.evaluate(() => window.__vibes.length), 0, 'off by default');
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.click('label.switch-row:has-text("Vibrate when packing")');
+  assert.equal(await page.evaluate(() => window.__vibes.length), 1); // confirmation tick
+  await page.goto(`${BASE}#/trip/${id}`);
+  await page.uncheck('input[aria-label^="T-shirts:"]');
+  const afterUnpack = await page.evaluate(() => window.__vibes.length);
+  await page.check('input[aria-label^="T-shirts:"]');
+  assert.equal(await page.evaluate(() => window.__vibes.at(-1)), 10);
+  assert.equal(await page.evaluate(() => window.__vibes.length), afterUnpack + 1);
+  // completing the whole trip uses the success pattern
+  await page.evaluate(() => { const { store } = window.__packwise; const open = store.state.items.filter((i) => i.packed < i.target); open.slice(0, -1).forEach((i) => store.setPacked(i.id, i.target)); });
+  await page.evaluate(() => { const { store } = window.__packwise; const last = store.state.items.find((i) => i.packed < i.target); store.setPacked(last.id, last.target); });
+  assert.deepEqual(await page.evaluate(() => window.__vibes.at(-1)), [18, 40, 28]);
+  // turning it off stops it
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.click('label.switch-row:has-text("Vibrate when packing")');
+  const n = await page.evaluate(() => window.__vibes.length);
+  await page.evaluate(() => { const { store } = window.__packwise; store.setPacked(store.state.items[0].id, 0); store.setPacked(store.state.items[0].id, store.state.items[0].target); });
+  assert.equal(await page.evaluate(() => window.__vibes.length), n);
+});
+
+await test('haptics: unsupported devices see a disabled, explained control', async ({ page }) => {
+  await page.addInitScript(() => { Object.defineProperty(Navigator.prototype, 'vibrate', { value: undefined, configurable: true }); });
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  assert.equal(await page.isDisabled('input[name=haptics]'), true);
+  assert.match(await page.locator('.settings-card:has-text("Haptic")').innerText(), /Not supported/);
+});
+
+await test('export as text, copy as text and print view', async ({ page, ctx }) => {
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Rome, Italy', bags: ['Checked'] });
+  const id = await firstTrip(page);
+  await page.check('input[aria-label^="T-shirts:"]');
+  await page.click('button[aria-label="Trip actions"]');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.sheet-item:has-text("Export as text")')]);
+  assert.equal(dl.suggestedFilename(), 'packwise-rome-italy.txt');
+  const text = readFileSync(await dl.path(), 'utf8');
+  assert.match(text, /^PackWise — Rome, Italy/);
+  assert.match(text, /CARRY-ON \(\d+\/\d+\)/);
+  assert.match(text, /CHECKED \(\d+\/\d+\)/);
+  assert.match(text, /\[x\] T-shirts x\d+/);
+  assert.match(text, /TRAVEL TASKS/);
+  await page.click('button[aria-label="Trip actions"]');
+  await page.click('.sheet-item:has-text("Copy as text")');
+  await page.waitForSelector('.toast:has-text("copied")');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), text.replace(/\n$/, ''));
+  // print view
+  await page.click('button[aria-label="Trip actions"]');
+  await page.click('.sheet-item:has-text("Print list")');
+  await page.waitForSelector('.print-sheet');
+  assert.equal(await page.locator('.print-sheet h1').innerText(), 'Rome, Italy');
+  assert.ok((await page.locator('.print-sheet li').count()) > 30);
+  assert.ok((await page.locator('.pbox.is-done').count()) >= 1);
+  await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
+  await page.click('[data-key="print-now"]');
+  assert.equal(await page.evaluate(() => window.__printed), 1);
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await page.isVisible('.nav'), false, 'navigation hidden when printing');
+  assert.equal(await page.isVisible('.print-actions'), false, 'buttons hidden when printing');
+  assert.equal(await page.isVisible('.print-sheet'), true);
+  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  assert.equal(bg, 'rgb(255, 255, 255)');
+  // all trips as text from Settings
+  await page.emulateMedia({ media: 'screen' });
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [all] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export all trips as text")')]);
+  assert.equal(all.suggestedFilename(), 'packwise-all-trips.txt');
+  void id;
+});
+
+await test('storage full: banner, retry, recovery; nothing is lost after reload', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page);
+  await page.evaluate(() => {
+    const a = window.__packwise.store.adapter;
+    window.__orig = { commit: a.commit, replaceAll: a.replaceAll };
+    const quota = () => Promise.reject(Object.assign(new Error('full'), { name: 'QuotaExceededError' }));
+    a.commit = quota;
+    a.replaceAll = quota;
+  });
+  await page.check('input[aria-label^="T-shirts:"]');
+  await page.waitForSelector('.banner-error:has-text("storage is full")');
+  assert.ok(await page.locator('.banner-error button:has-text("Export backup")').count());
+  assert.equal(await page.getAttribute('.banner-error a:has-text("Manage storage")', 'href'), '#/settings?tab=data');
+  // still full
+  await page.click('button:has-text("Try saving again")');
+  await page.waitForSelector('.toast:has-text("Still could not save")');
+  assert.ok(await page.locator('.banner-error').count());
+  // the app keeps working while saving fails
+  await page.check('input[aria-label^="Underwear:"]');
+  // space freed
+  await page.evaluate(() => { const a = window.__packwise.store.adapter; Object.assign(a, window.__orig); });
+  await page.click('button:has-text("Try saving again")');
+  await page.waitForSelector('.toast:has-text("Everything is saved now")');
+  assert.equal(await page.locator('.banner-error').count(), 0);
+  await page.waitForTimeout(100);
+  await reloadSettled(page);
+  const st = await tripState(page);
+  assert.ok(st.items.find((i) => i.name === 'T-shirts').packed > 0);
+  assert.ok(st.items.find((i) => i.name === 'Underwear').packed > 0);
+});
+
+await test('newer-version data is never overwritten; app runs a clean in-memory session', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Keep me' });
+  await page.waitForTimeout(200);
+  await idbSetVersion(page, 99);
+  await reloadSettled(page);
+  await page.waitForSelector('.banner-warn:has-text("newer version")');
+  assert.equal((await tripState(page)).trips.length, 0);
+  await createTrip(page, { dest: 'Temp' }); // works, but is not persisted
+  await reloadSettled(page);
+  const raw = await idbSnapshotRaw(page);
+  assert.deepEqual(raw, { trips: ['Keep me'], version: 99 });
+});
+
+await test('migration keeps a safety copy that can be downloaded', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(BASE);
+  await page.waitForSelector('#view > *');
+  // write pre-release (v0) shaped data straight into IndexedDB
+  await idbSeedLegacy(page);
+  await reloadSettled(page);
+  const st = await tripState(page);
+  assert.deepEqual([st.items[0].target, st.items[0].packed], [4, 4]);
+  assert.equal(await page.locator('.banner-error').count(), 0);
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Download")')]);
+  const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  assert.equal(file.schemaVersion, 0);
+  assert.deepEqual(file.data.items[0], { id: 'oldi', tripId: 'old1', bagId: 'oldb', name: 'Old shirt', qty: 4, done: true }); // untouched original
+  assert.match(dl.suggestedFilename(), /^packwise-before-upgrade-\d{4}-\d{2}-\d{2}\.json$/);
+  // the safety copy re-imports through the normal migration path
+  await page.setInputFiles('input[type=file]', { name: 'safety.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+  await page.waitForSelector('dialog[open]:has-text("Import backup")');
+  await page.click('dialog button:has-text("Cancel")');
+});
+
+await test('install help: prompt button, iOS instructions, installed event', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings?tab=about`);
+  await page.waitForSelector('.install-box');
+  assert.match(await page.locator('.install-box').innerText(), /Install from your browser menu/);
+  await page.evaluate(() => {
+    window.__prompted = 0;
+    const evt = new Event('beforeinstallprompt', { cancelable: true });
+    evt.prompt = () => { window.__prompted += 1; return Promise.resolve(); };
+    evt.userChoice = Promise.resolve({ outcome: 'accepted' });
+    window.dispatchEvent(evt);
+  });
+  await page.waitForSelector('.install-box button:has-text("Install app")');
+  await page.click('.install-box button:has-text("Install app")');
+  assert.equal(await page.evaluate(() => window.__prompted), 1);
+  await page.waitForSelector('.install-box:not(:has(button))');
+  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  await page.waitForSelector('.toast:has-text("installed")');
+  assert.match(await page.locator('.install-box').innerText(), /Installed/);
+});
+
+await test('install help: iPhone Safari gets Add to Home Screen steps', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings?tab=about`);
+  await page.waitForSelector('.install-box');
+  assert.match(await page.locator('.install-box').innerText(), /Add to Home Screen/);
+}, { ctxOptions: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1' } });
+
+await test('offline files: verify, detect damage, repair, and still open offline', async ({ page, ctx }) => {
+  await skipWelcome(page);
+  await page.goto(BASE);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller);
+  await createTrip(page);
+  await page.goto(`${BASE}#/settings?tab=about`);
+  await page.click('button:has-text("Check offline files")');
+  await page.waitForSelector('p:has-text("offline files are in place")');
+  // damage the cache on purpose
+  const victim = await page.evaluate(async () => { const c = await caches.open((await caches.keys())[0]); const url = new URL('js/store.js', location.href).href; const ok = await c.delete(url); return ok ? url : null; });
+  assert.ok(victim);
+  await page.click('button:has-text("Check offline files")');
+  await page.waitForSelector('p:has-text("1 of")');
+  await page.click('button:has-text("Repair offline files")');
+  await page.waitForSelector('p:has-text("repaired and verified")');
+  assert.equal(await page.evaluate(async (u) => Boolean(await (await caches.open((await caches.keys())[0])).match(u)), victim), true);
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('h1:has-text("Settings")');
+  assert.equal(await page.evaluate(() => window.__packwise.store.state.trips.length), 1);
+  await ctx.setOffline(false);
+}, { sw: true });
+
+await test('completion scene: confetti with standard motion, none when reduced', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page);
+  const id = await firstTrip(page);
+  const all = () => page.evaluate(() => { const { store } = window.__packwise; store.state.items.forEach((i) => store.setPacked(i.id, i.target)); store.state.tasks.forEach((t) => !t.done && store.toggleTask(t.id)); });
+  await all();
+  await page.goto(`${BASE}#/trip/${id}/summary`);
+  await page.waitForSelector('h1:has-text("All Packed!")');
+  assert.ok((await page.locator('.confetti span').count()) >= 10);
+  assert.equal(await page.getAttribute('.confetti', 'aria-hidden'), 'true');
+  assert.ok(await page.locator('.celebrate-case').count());
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("Reduced")');
+  await page.goto(`${BASE}#/trip/${id}/summary`);
+  await page.waitForSelector('h1:has-text("All Packed!")');
+  assert.equal(await page.locator('.confetti').count(), 0);
+});
+
+await test('no dead navigation: every nav link and in-app link resolves to a real screen', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { bags: ['Checked'] });
+  const id = await firstTrip(page);
+  const seen = new Set();
+  const visit = async (hash) => {
+    await page.goto(`${BASE}${hash}`);
+    await page.waitForSelector('#view h1');
+    const h1 = await page.locator('#view h1').first().innerText();
+    assert.ok(!/not found/i.test(h1), `${hash} is a dead page`);
+    return page.evaluate(() => [...document.querySelectorAll('a[href^="#/"]')].map((a) => a.getAttribute('href')));
+  };
+  const queue = ['#/', '#/trips', `#/trip/${id}`, `#/trip/${id}/studio`, '#/settings', '#/templates', `#/trip/${id}/summary`, `#/trip/${id}/tasks`];
+  while (queue.length) {
+    const hash = queue.shift();
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    for (const link of await visit(hash)) if (!seen.has(link) && !link.includes('/print') === true && seen.size < 40) queue.push(link);
+  }
+  for (const must of ['#/pack', '#/tasks', '#/studio', '#/templates', '#/settings', '#/trips/new']) assert.ok(seen.has(must), `${must} reachable from the UI`);
+  assert.ok(seen.size >= 10, `crawled ${seen.size} routes`);
+  await page.goto(`${BASE}#/does/not/exist`);
+  await page.waitForSelector('h2:has-text("Page not found")');
+});
+
+await test('privacy audit: only same-origin GETs, no storage of trip data outside IndexedDB, no cookies', async ({ page, ctx }) => {
+  const requests = [];
+  page.on('request', (r) => requests.push({ url: r.url(), method: r.method(), type: r.resourceType() }));
+  let sockets = 0;
+  page.on('websocket', () => { sockets += 1; });
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Secretville' });
+  const id = await firstTrip(page);
+  await page.evaluate(() => { const { store } = window.__packwise; store.loadDemo(); store.saveTripAsTemplate(store.state.trips[0].id, 'Secret template'); });
+  for (const r of ['/', '/trips', `/trip/${id}`, `/trip/${id}/studio`, `/trip/${id}/tasks`, '/templates', '/settings?tab=about']) { await page.goto(`${BASE}#${r}`); await page.waitForTimeout(80); }
+  const foreign = requests.filter((r) => !r.url.startsWith(BASE) && !r.url.startsWith('data:') && !r.url.startsWith('blob:'));
+  assert.deepEqual(foreign, [], 'no third-party requests');
+  assert.deepEqual(requests.filter((r) => r.method !== 'GET'), [], 'no uploads of any kind');
+  assert.equal(sockets, 0);
+  assert.ok(requests.every((r) => !/secret/i.test(r.url)), 'trip names never appear in URLs sent to the network');
+  const ls = await page.evaluate(() => JSON.stringify(Object.entries(localStorage)));
+  assert.ok(!/secretville|template/i.test(ls), 'localStorage holds preferences only');
+  assert.deepEqual(await ctx.cookies(), []);
+  assert.equal(await page.evaluate(() => document.cookie), '');
+  const csp = await page.getAttribute('meta[http-equiv="Content-Security-Policy"]', 'content');
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /script-src 'self'(?!.*unsafe)/);
+});
+
+await test('keyboard: skip link, full create-trip flow and dialog use without a mouse', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/trips/new`);
+  await reloadSettled(page);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.className), 'skip-link');
+  assert.ok(await page.isVisible('.skip-link'), 'skip link becomes visible on focus');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'view');
+  // type tiles are radios: arrows change the choice
+  await page.focus('input[name=type]:checked');
+  await page.keyboard.press('ArrowRight');
+  assert.notEqual(await page.evaluate(() => document.querySelector('input[name=type]:checked').value), 'city');
+  await page.fill('input[name=destination]', 'Keyboardia');
+  await page.focus('input[name=destination]');
+  await page.keyboard.press('Enter'); // submit from the text field
+  await page.waitForSelector('h1:has-text("Keyboardia")');
+  // open the item dialog from the keyboard, edit, save
+  await page.focus('button[aria-label="Edit T-shirts"]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('dialog[open]');
+  assert.equal(await page.evaluate(() => document.activeElement.name), 'name');
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+  assert.ok(await page.evaluate(() => document.querySelector('dialog[open]').contains(document.activeElement)), 'focus stays inside the dialog');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('dialog', { state: 'detached' });
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Edit T-shirts');
+});
+
+await test('startup performance: first meaningful render is quick (cold and warm)', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page);
+  const measure = async () => {
+    const t0 = Date.now();
+    await page.goto(BASE, { waitUntil: 'commit' });
+    await page.waitForSelector('.dashboard .hero');
+    return Date.now() - t0;
+  };
+  const cold = await measure();
+  const warm = await measure();
+  console.log(`       (startup to dashboard: cold ${cold} ms, warm ${warm} ms)`);
+  assert.ok(cold < 2500 && warm < 2000, `cold ${cold}ms, warm ${warm}ms`);
+  const timing = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0]; return { dcl: n.domContentLoadedEventEnd, load: n.loadEventEnd }; });
+  assert.ok(timing.load < 3000, `load event ${timing.load}ms`);
+});
+
+await test('critical workflow: first visit → trip → pack → bag change → tasks → finish → reuse/return → backup/restore', async ({ page }) => {
+  await page.goto(BASE);
+  await page.click('button:has-text("Get Started")');
+  // create (Balkan season is suggested from the dates)
+  await page.click('label.tile:has-text("Beach")');
+  await page.fill('input[name=destination]', 'Budva, Montenegro');
+  await page.fill('input[name=start]', '2026-07-05');
+  await page.fill('input[name=end]', '2026-07-12');
+  await page.click('label.tile:has-text("Checked")');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Budva, Montenegro")');
+  await page.waitForSelector('text=Summer');
+  let st = await tripState(page);
+  const trip = st.trips[0];
+  assert.equal(trip.season, 'summer');
+  assert.ok(st.items.some((i) => i.name === 'Sunscreen'));
+  // pack / unpack
+  await page.check('input[aria-label^="T-shirts:"]');
+  await page.uncheck('input[aria-label^="T-shirts:"]');
+  await page.check('input[aria-label^="T-shirts:"]');
+  // change bag
+  const [carry, checked] = st.bags.filter((b) => b.tripId === trip.id);
+  await page.click('button[aria-label="Edit Swimwear"]');
+  await page.selectOption('dialog select[name=bag]', carry.id);
+  await page.click('dialog button:has-text("Save")');
+  await page.waitForFunction((a) => window.__packwise.store.state.items.find((i) => i.name === 'Swimwear').bagId === a, carry.id);
+  // studio shows it
+  await page.goto(`${BASE}#/trip/${trip.id}/studio`);
+  await page.selectOption('select[name=bag]', carry.id);
+  await page.waitForSelector('.tray-token[aria-label^="Pack Swimwear"]');
+  // tasks
+  await page.goto(`${BASE}#/tasks`);
+  await page.check('input[aria-label^="Check passport"]');
+  // finish: everything packed + tasks done
+  await page.evaluate(() => { const { store } = window.__packwise; store.state.items.forEach((i) => store.setPacked(i.id, i.target)); store.state.tasks.forEach((t) => !t.done && store.toggleTask(t.id)); });
+  await page.goto(`${BASE}#/trip/${trip.id}/summary`);
+  await page.waitForSelector('h1:has-text("All Packed!")');
+  // reuse: template → new trip
+  await page.evaluate((tid) => window.__packwise.store.saveTripAsTemplate(tid, 'Beach basics'), trip.id);
+  await page.goto(`${BASE}#/trips/new?template=${(await tripState(page)).templates[0].id}`);
+  await page.fill('input[name=destination]', 'Ohrid');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Ohrid")');
+  // return trip
+  await page.goto(`${BASE}#/trip/${trip.id}/summary`);
+  await page.click('button:has-text("Plan return trip")');
+  await page.click('dialog button:has-text("Create return checklist")');
+  await page.waitForSelector('h1:has-text("— return")');
+  // backup → wipe → restore
+  const before = await tripState(page);
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.trips.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction((n) => window.__packwise.store.state.trips.length === n, before.trips.length);
+  await reloadSettled(page);
+  const after = await tripState(page);
+  const byId = (list) => [...list].sort((a, b) => a.id.localeCompare(b.id)); // storage order is by key, not insertion
+  for (const k of ['trips', 'bags', 'items', 'tasks', 'templates']) assert.deepEqual(byId(after[k]), byId(before[k]), k);
+});
+
+await test('dark theme: every screen renders without overflow and with readable contrast tokens', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await skipWelcome(page);
+  await createTrip(page);
+  const id = await firstTrip(page);
+  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
+    await page.goto(`${BASE}#${route}`);
+    await page.waitForTimeout(200);
+    const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bg: getComputedStyle(document.body).backgroundColor }));
+    assert.ok(o.sw <= o.cw, `${name} overflows in dark mode`);
+    if (name !== 'print') assert.equal(o.bg, 'rgb(14, 31, 33)');
+    await page.screenshot({ path: join(SHOTS, `dark-${name}.png`) });
+  }
+});
+
 // ------------------------------------------------------------- responsive
 const viewports = [[360, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
 for (const [w, h] of viewports) {
@@ -1053,7 +1510,7 @@ for (const [w, h] of viewports) {
     await createTrip(page, { dest: 'Chamonix', type: 'Winter', start: '2027-01-10', end: '2027-01-15' });
     const st = await tripState(page);
     const id = st.trips[0].id;
-    const routes = [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['settings', '/settings'], ['welcome', '/welcome']];
+    const routes = [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings'], ['settings-data', '/settings?tab=data'], ['settings-prefs', '/settings?tab=preferences'], ['settings-about', '/settings?tab=about'], ['welcome', '/welcome']];
     for (const [name, route] of routes) {
       await page.goto(`${BASE}#${route}`);
       await page.waitForTimeout(250);
@@ -1087,7 +1544,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.1.2']);
+  assert.deepEqual(keys, ['packwise-v1.2.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -1127,7 +1584,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.1.2', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.2.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());

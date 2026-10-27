@@ -256,3 +256,9 @@ export function destinationArt(type = 'custom', { className = 'dest-art', label 
   const make = SCENES[type] || SCENES.custom;
   return frame(400, 240, label, className, ...make(id));
 }
+
+/** Soft full-width scene for the optional app background (see Settings). */
+export function backgroundArt(kind) {
+  const map = { mountains: 'winter', beach: 'beach', city: 'city' };
+  return map[kind] ? destinationArt(map[kind], { className: 'bg-art-svg' }) : null;
+}

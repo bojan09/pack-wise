@@ -1212,3 +1212,11 @@ input[aria-invalid='true'] {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
+
+/* long button labels wrap instead of overflowing narrow cards */
+.settings-card .btn,
+.dialog .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}

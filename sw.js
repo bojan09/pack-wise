@@ -1,6 +1,6 @@
 /* PackWise service worker: versioned app-shell precache, cache-first, offline-ready.
  * Bump CACHE_VERSION (and APP_VERSION in js/models.js) with every release. */
-const CACHE_VERSION = 'packwise-v1.1.2';
+const CACHE_VERSION = 'packwise-v1.2.0';
 
 const PRECACHE = [
   './',
@@ -25,6 +25,9 @@ const PRECACHE = [
   'js/migrations.js',
   'js/backup.js',
   'js/prefs.js',
+  'js/haptics.js',
+  'js/install.js',
+  'js/export.js',
   'js/companion.js',
   'js/format.js',
   'js/storage/idb.js',
@@ -47,6 +50,7 @@ const PRECACHE = [
   'js/screens/summary.js',
   'js/screens/settings.js',
   'js/screens/studio.js',
+  'js/screens/print.js',
   'js/screens/templates.js',
   'js/screens/tripDialogs.js',
   'assets/icons/icon.svg',
@@ -70,13 +74,39 @@ self.addEventListener('activate', (event) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(keys.filter((k) => k.startsWith('packwise-') && k !== CACHE_VERSION).map((k) => caches.delete(k)));
+      // integrity: a half-written cache is repaired before this version takes over
+      try { if ((await missingFiles()).length) await repairCache(); } catch { /* offline: keep what we have */ }
       await self.clients.claim();
     })(),
   );
 });
 
+const precacheUrl = (p) => new URL(p, self.registration.scope).href;
+
+/** Which precached files are absent from the cache (empty = intact). */
+async function missingFiles() {
+  const cache = await caches.open(CACHE_VERSION);
+  const missing = [];
+  for (const p of PRECACHE) if (!(await cache.match(precacheUrl(p)))) missing.push(p);
+  return missing;
+}
+
+async function repairCache() {
+  await caches.delete(CACHE_VERSION);
+  const cache = await caches.open(CACHE_VERSION);
+  await cache.addAll(PRECACHE.map((p) => new Request(p, { cache: 'reload' })));
+}
+
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  const data = event.data || {};
+  if (data.type === 'SKIP_WAITING') self.skipWaiting();
+  const reply = (msg) => event.ports && event.ports[0] && event.ports[0].postMessage(msg);
+  if (data.type === 'VERIFY') {
+    event.waitUntil(missingFiles().then((missing) => reply({ ok: true, total: PRECACHE.length, missing }), (err) => reply({ ok: false, error: String(err) })));
+  }
+  if (data.type === 'REPAIR') {
+    event.waitUntil(repairCache().then(() => missingFiles()).then((missing) => reply({ ok: missing.length === 0, total: PRECACHE.length, missing }), (err) => reply({ ok: false, error: String(err) })));
+  }
 });
 
 self.addEventListener('fetch', (event) => {

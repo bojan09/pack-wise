@@ -3,11 +3,20 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button } from '../ui/components.js';
 import { returnTripDialog } from './tripDialogs.js';
-import { companion } from '../ui/art.js';
+import { companion, suitcase } from '../ui/art.js';
+import { effectiveMotion } from '../prefs.js';
 import { essentialsLeft, sumQty, taskProgress } from '../progress.js';
 import { getTrip, tripBags, tripItems, tripTasks } from '../selectors.js';
 import { plural } from '../format.js';
 import { tripSubtitle } from './shared.js';
+
+/** Falling confetti; purely decorative and omitted under reduced motion. */
+function confetti() {
+  if (effectiveMotion() === 'reduced') return null;
+  const colors = ['#31B6A6', '#F28A72', '#E7B66C', '#5B7FA8', '#9A7FD1'];
+  const n = effectiveMotion() === 'enhanced' ? 36 : 20;
+  return h('div', { class: 'confetti', 'aria-hidden': 'true' }, Array.from({ length: n }, (_, i) => h('span', { style: { left: `${(i * 97) % 100}%`, background: colors[i % colors.length], animationDelay: `${(i % 9) * 120}ms`, animationDuration: `${1800 + (i % 5) * 260}ms`, transform: `rotate(${(i * 47) % 360}deg)` } })));
+}
 
 export function SummaryScreen(ctx) {
   const { store, params } = ctx;
@@ -29,7 +38,7 @@ export function SummaryScreen(ctx) {
       return h(
         'div',
         { class: 'screen summary-screen' },
-        h('div', { class: 'celebrate' }, companion({ mood: 'camera', className: 'celebrate-mascot', label: 'PackWise traveler mascot' }), h('h1', { tabindex: '-1', text: allPacked ? 'All Packed!' : 'Almost there' }), h('p', { class: 'muted', text: allPacked ? `You’re ready for ${dest}!` : `Here’s how packing for ${dest} is going.` }), h('p', { class: 'muted small', text: tripSubtitle(trip) })),
+        h('div', { class: `celebrate${allPacked ? ' is-complete' : ''}` }, allPacked ? confetti() : null, h('div', { class: 'celebrate-stage' }, allPacked ? suitcase({ className: 'celebrate-case' }) : null, companion({ mood: 'camera', className: 'celebrate-mascot', label: 'PackWise traveler mascot' })), h('h1', { tabindex: '-1', text: allPacked ? 'All Packed!' : 'Almost there' }), h('p', { class: 'muted', text: allPacked ? `You’re ready for ${dest}!` : `Here’s how packing for ${dest} is going.` }), h('p', { class: 'muted small', text: tripSubtitle(trip) })),
         h(
           'ul',
           { class: 'card check-list' },

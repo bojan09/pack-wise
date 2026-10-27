@@ -33,6 +33,14 @@ A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScrip
 
 - **Balkan seasons from your dates:** choosing departure/return dates sets the season automatically using the meteorological calendar used across the Balkans: spring Mar–May, summer Jun–Aug, fall Sep–Nov, winter Dec–Feb. A trip that spans two seasons gets the one with most days (a tie goes to the departure date). Pick a season yourself and your choice is never overridden.
 
+## Added in Phase 3 (v1.2.0): hardening, settings, release prep
+
+- **Settings** in four tabs (Appearance · Data · Preferences · About): theme, accent, background style (default, mountains, beach, city, minimal), motion level, optional haptics, companion toggle, backup/restore, storage protection, sample data, install help and offline-file check/repair.
+- **Export & print:** plain-text export or copy of any trip, an all-trips text export, and a clean print view.
+- **Data safety:** "Try saving again" recovery when storage is full, a safety copy kept before any schema upgrade, and refusal to open (or overwrite) data written by a newer version.
+- **PWA:** install prompt/iOS steps, hourly update check on return, cache integrity verification and repair.
+- **Completion scene** with confetti and a closed suitcase (motion permitting).
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.
@@ -51,7 +59,11 @@ npm run test:e2e     # real-browser checks (Playwright + Chromium), dev-only
 
 The e2e suite needs Playwright, which is **not** a dependency of the app. Install it anywhere (`npm i -D playwright && npx playwright install chromium`) or point `PLAYWRIGHT_MODULE` at an existing install. It covers the main journeys, import/export round-trips and rejection of corrupt files, offline re-open, service-worker upgrade, keyboard and reduced-motion behavior, accessible names, and horizontal overflow at 360×640, 390×844, 768×1024, 1024×768 and 1440×900. Screenshots go to `tests/e2e/.out/` (git-ignored).
 
-## Deploy for free (GitHub Pages)
+## Deploy for free
+
+`_headers` (Netlify / Cloudflare Pages), `.nojekyll`, `robots.txt` and `docs/RELEASE_CHECKLIST.md` are included. Privacy details: `docs/PRIVACY.md`.
+
+### GitHub Pages
 
 1. Push to `master`.
 2. Repository → **Settings → Pages** → *Deploy from a branch* → branch `master`, folder `/ (root)`.

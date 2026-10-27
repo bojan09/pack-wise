@@ -6,6 +6,7 @@ export function createRouter({ routes, root, store, services, onRoute }) {
   let current = null;
   let unsubscribe = null;
   let renderingToken = 0;
+  let firstRender = true; // keep the skip link first in tab order on page load
 
   const parse = () => {
     const raw = location.hash.slice(1) || '/';
@@ -70,7 +71,8 @@ export function createRouter({ routes, root, store, services, onRoute }) {
       root.classList.remove('page-enter');
       void root.offsetWidth; // restart the CSS animation
       root.classList.add('page-enter');
-      root.querySelector('h1')?.focus({ preventScroll: true });
+      if (!firstRender) root.querySelector('h1')?.focus({ preventScroll: true });
+      firstRender = false;
     }
   }
 

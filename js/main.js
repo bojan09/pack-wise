@@ -1,11 +1,14 @@
 import { h } from './dom.js';
-import { applyPrefs, getPrefs, setPrefs } from './prefs.js';
+import { applyPrefs, getPrefs, onPrefsChange, setPrefs } from './prefs.js';
+import { buzz } from './haptics.js';
+import { detectPlatform, installAdvice } from './install.js';
+import { sumQty } from './progress.js';
 import { createStore } from './store.js';
 import { createIdbAdapter } from './storage/idb.js';
 import { createMemoryAdapter } from './storage/memory.js';
 import { createRouter } from './router.js';
 import { icon } from './ui/icons.js';
-import { logoMark, destinationArt } from './ui/art.js';
+import { backgroundArt, logoMark, destinationArt } from './ui/art.js';
 import { button, emptyState } from './ui/components.js';
 import { toast } from './ui/toast.js';
 import { downloadBackup } from './backup.js';
@@ -16,6 +19,7 @@ import { ChecklistScreen } from './screens/checklist.js';
 import { TasksRedirectScreen, TasksScreen } from './screens/tasks.js';
 import { PackRedirectScreen, StudioRedirectScreen } from './screens/pack.js';
 import { StudioScreen } from './screens/studio.js';
+import { PrintScreen } from './screens/print.js';
 import { TemplatesScreen } from './screens/templates.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SettingsScreen } from './screens/settings.js';
@@ -39,24 +43,34 @@ const NotFound = () => ({
 async function openStore() {
   let adapter;
   let kind = 'indexeddb';
+  let problem = '';
   try {
     adapter = await createIdbAdapter();
   } catch {
     adapter = createMemoryAdapter();
     kind = 'memory';
+    problem = 'unavailable';
   }
   let store = createStore(adapter);
   try {
     await store.init();
-  } catch {
-    // Stored data could not be read. Fall back to an empty in-memory session rather than overwrite anything.
+  } catch (err) {
+    // Stored data could not be used. Run an empty in-memory session and never overwrite what is on disk.
+    problem = err?.code === 'NEWER_DATA' ? 'newer' : err?.code === 'MIGRATION_FAILED' ? 'migration' : 'unreadable';
     adapter = createMemoryAdapter();
     kind = 'memory';
     store = createStore(adapter);
     await store.init();
   }
-  return { store, kind };
+  return { store, kind, problem };
 }
+
+const PROBLEM_TEXT = {
+  unavailable: 'Local storage is unavailable, so changes will be lost when you close the app. Export a backup to keep your data.',
+  newer: 'Your saved trips were created by a newer version of PackWise. They have not been touched. Update the app (reload, or clear the cached copy) to open them; until then this session starts empty and will not be saved.',
+  migration: 'Your saved trips could not be upgraded, so they were left untouched. This session starts empty and will not be saved. A safety copy of your data is kept on this device.',
+  unreadable: 'Saved data could not be read, so it was left untouched. This session starts empty and will not be saved.',
+};
 
 function buildShell() {
   const nav = h(
@@ -68,6 +82,8 @@ function buildShell() {
   );
   const banners = h('div', { class: 'banners' });
   const view = h('main', { id: 'view', class: 'view', tabindex: '-1' });
+  // hash routing owns location.hash, so the skip link focuses <main> directly instead of navigating to #view
+  document.querySelector('.skip-link')?.addEventListener('click', (e) => { e.preventDefault(); view.focus(); });
   const shell = h('div', { class: 'app' }, nav, h('div', { class: 'content' }, banners, view));
   document.getElementById('app').replaceChildren(shell);
   return { shell, nav, banners, view };
@@ -75,11 +91,52 @@ function buildShell() {
 
 async function boot() {
   applyPrefs(getPrefs());
-  const { store, kind } = await openStore();
+  const { store, kind, problem } = await openStore();
   const { shell, nav, banners, view } = buildShell();
 
   // ---- service worker + update flow
-  const app = { storageKind: kind, swSupported: false, registration: null, checkForUpdate: async () => 'unsupported' };
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const platform = detectPlatform({ userAgent: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints, platform: navigator.platform });
+  const installListeners = new Set();
+  const app = {
+    storageKind: kind,
+    storageProblem: problem,
+    swSupported: false,
+    registration: null,
+    installPrompt: null,
+    standalone,
+    ios: platform.ios,
+    secure: location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1',
+    checkForUpdate: async () => 'unsupported',
+    verifyCache: async () => ({ ok: false, error: 'unsupported' }),
+    repairCache: async () => ({ ok: false, error: 'unsupported' }),
+    onInstallChange: (fn) => { installListeners.add(fn); return () => installListeners.delete(fn); },
+    installAdvice: () => installAdvice({ standalone: app.standalone, secure: app.secure, hasPrompt: Boolean(app.installPrompt), ios: app.ios, serviceWorker: 'serviceWorker' in navigator }),
+    async install() {
+      const evt = app.installPrompt;
+      if (!evt) return 'unavailable';
+      app.installPrompt = null;
+      installListeners.forEach((fn) => fn());
+      try {
+        await evt.prompt();
+        const choice = await evt.userChoice;
+        return choice?.outcome || 'dismissed';
+      } catch {
+        return 'error';
+      }
+    },
+  };
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // keep the event so Settings can offer the install button
+    app.installPrompt = e;
+    installListeners.forEach((fn) => fn());
+  });
+  addEventListener('appinstalled', () => {
+    app.installPrompt = null;
+    app.standalone = true;
+    installListeners.forEach((fn) => fn());
+    toast('PackWise is installed.', { tone: 'success' });
+  });
   const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if ('serviceWorker' in navigator && secure) {
     app.swSupported = true;
@@ -90,8 +147,10 @@ async function boot() {
   const bannerState = { offline: !navigator.onLine };
   const renderBanners = () => {
     const items = [];
-    if (kind === 'memory') items.push(h('div', { class: 'banner banner-warn', role: 'alert' }, icon('alert', { size: 18 }), h('span', { text: 'Local storage is unavailable, so changes will be lost when you close the app. Export a backup to keep your data.' })));
-    if (store.state.saveError) items.push(h('div', { class: 'banner banner-error', role: 'alert' }, icon('alert', { size: 18 }), h('span', { text: store.state.saveError }), button({ label: 'Export backup', variant: 'secondary', onClick: () => downloadBackup(store) })));
+    if (kind === 'memory') items.push(h('div', { class: 'banner banner-warn', role: 'alert' }, icon('alert', { size: 18 }), h('span', { text: PROBLEM_TEXT[problem] || PROBLEM_TEXT.unavailable }), button({ label: 'Export backup', variant: 'secondary', onClick: () => downloadBackup(store) })));
+    if (store.state.saveError) {
+      items.push(h('div', { class: 'banner banner-error', role: 'alert' }, icon('alert', { size: 18 }), h('span', { text: store.state.saveError }), h('div', { class: 'banner-actions' }, button({ label: 'Export backup', variant: 'secondary', onClick: () => downloadBackup(store) }), button({ label: 'Try saving again', variant: 'secondary', key: 'retry-save', onClick: async () => { const ok = await store.resync(); toast(ok ? 'Everything is saved now.' : 'Still could not save. Free up space, then try again.', { tone: ok ? 'success' : 'error' }); } }), button({ label: 'Manage storage', variant: 'ghost', href: '#/settings?tab=data' }))));
+    }
     if (bannerState.offline) items.push(h('div', { class: 'banner banner-info' }, icon('wifi', { size: 18 }), h('span', { text: 'You’re offline. PackWise keeps working and saves everything on this device.' })));
     banners.replaceChildren(...items);
   };
@@ -99,6 +158,31 @@ async function boot() {
   addEventListener('offline', () => { bannerState.offline = true; renderBanners(); });
   store.subscribe(() => renderBanners());
   renderBanners();
+
+  // ---- optional decorative background (Settings > Appearance)
+  const bgHost = h('div', { id: 'bg-art', class: 'bg-art', 'aria-hidden': 'true' });
+  document.body.prepend(bgHost);
+  const paintBackground = () => { const art = backgroundArt(getPrefs().background); bgHost.replaceChildren(...(art ? [art] : [])); };
+  paintBackground();
+  onPrefsChange(paintBackground);
+
+  // ---- optional haptics: a tick when more is packed, a pattern when a trip becomes complete
+  let lastPacked = sumQty(store.state.items).packed;
+  const completed = new Set(store.state.trips.filter((t) => { const q = sumQty(store.state.items.filter((i) => i.tripId === t.id)); return q.target > 0 && q.packed === q.target; }).map((t) => t.id));
+  store.subscribe((state) => {
+    const packed = sumQty(state.items).packed;
+    if (packed > lastPacked) {
+      const nowDone = state.trips.filter((t) => { const q = sumQty(state.items.filter((i) => i.tripId === t.id)); return q.target > 0 && q.packed === q.target; }).map((t) => t.id);
+      const fresh = nowDone.some((id) => !completed.has(id));
+      completed.clear();
+      nowDone.forEach((id) => completed.add(id));
+      buzz(fresh ? 'success' : 'tick');
+    } else if (packed < lastPacked) {
+      completed.clear();
+      state.trips.forEach((t) => { const q = sumQty(state.items.filter((i) => i.tripId === t.id)); if (q.target > 0 && q.packed === q.target) completed.add(t.id); });
+    }
+    lastPacked = packed;
+  });
 
   const lastTrip = () => getPrefs().lastTripId;
   const services = { app, prefs: getPrefs, lastTrip, setLastTrip: (id) => { if (id !== lastTrip()) setPrefs({ lastTripId: id }); } };
@@ -113,6 +197,7 @@ async function boot() {
     { path: '/trip/:id/tasks', name: 'tasks', nav: 'tasks', screen: TasksScreen },
     { path: '/trip/:id/summary', name: 'summary', nav: 'pack', screen: SummaryScreen },
     { path: '/trip/:id/studio', name: 'studio', nav: 'studio', screen: StudioScreen },
+    { path: '/trip/:id/print', name: 'print', nav: 'pack', screen: PrintScreen },
     { path: '/templates', name: 'templates', nav: 'templates', screen: TemplatesScreen },
     { path: '/studio', name: 'studio-home', nav: 'studio', screen: StudioRedirectScreen },
     { path: '/pack', name: 'pack', nav: 'pack', screen: PackRedirectScreen },
@@ -181,6 +266,25 @@ function registerServiceWorker(app) {
           return 'error';
         }
       };
+      const ask = (type) =>
+        new Promise((resolve) => {
+          const worker = reg.active || navigator.serviceWorker.controller;
+          if (!worker) { resolve({ ok: false, error: 'no-worker' }); return; }
+          const channel = new MessageChannel();
+          const timer = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 15000);
+          channel.port1.onmessage = (e) => { clearTimeout(timer); resolve(e.data); };
+          worker.postMessage({ type }, [channel.port2]);
+        });
+      app.verifyCache = () => ask('VERIFY');
+      app.repairCache = () => ask('REPAIR');
+      // re-check for a new version when the app comes back to the foreground (at most hourly)
+      let lastCheck = Date.now();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && Date.now() - lastCheck > 3600000) {
+          lastCheck = Date.now();
+          reg.update().catch(() => {});
+        }
+      });
     })
     .catch(() => {});
   let reloading = false;

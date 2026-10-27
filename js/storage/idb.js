@@ -87,6 +87,17 @@ export async function createIdbAdapter() {
       });
     },
 
+    async saveSafetyCopy(copy) {
+      await transact(db, ['meta'], 'readwrite', (tx) => {
+        tx.objectStore('meta').put({ key: 'safetyCopy', value: copy });
+      });
+    },
+
+    async loadSafetyCopy() {
+      const rows = await transact(db, ['meta'], 'readonly', (tx) => requestToPromise(tx.objectStore('meta').get('safetyCopy')));
+      return rows?.value ?? null;
+    },
+
     async clear() {
       await transact(db, [...STORE_NAMES, 'meta'], 'readwrite', (tx) => {
         for (const s of STORE_NAMES) tx.objectStore(s).clear();

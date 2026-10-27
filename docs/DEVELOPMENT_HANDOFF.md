@@ -1,6 +1,6 @@
 # PackWise — development handoff
 
-Last updated: end of **Phase 2.1** (smart travel + Packing Studio). Phase 3 is not started.
+Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart travel + Packing Studio). Phase 3 is not started.
 
 ## Decisions
 
@@ -41,6 +41,18 @@ Last updated: end of **Phase 2.1** (smart travel + Packing Studio). Phase 3 is n
 
 - `npm test`: **35/35** unit tests (adds ordering, bulk, templates, copy-trip, return trip, readiness, companion, demo data, backup round-trip of new fields).
 - `npm run test:e2e`: **41/41** (adds: studio/tray/case/tile/checklist sync, bag switch, rapid taps, leaving mid-animation, trip switching, camera buttons/keyboard/drag, lid, selection, motion levels incl. OS override, 150-item legibility caps, 500-item performance (checklist ≈0.4 s, studio ≈0.1 s here), reorder by drag/keyboard/dialog, bulk ops, templates + copy trip + climate, return trip, companion + readiness, sample data, new-field backup, offline studio; studio/templates added to the accessible-name and 5-viewport overflow sweeps).
+
+## Phase 3 (v1.2.0): settings, export/print, data safety, PWA hardening
+
+> **Plan change:** the *Destination Discovery* brief (`PackWise_Destination_Discovery_Extension.md`) re-schedules the original final-release phase to **Phase 6** and adds Discovery (3), Food & Drink (4) and My Trip Guide (5) before it. The work below was already in progress when that brief arrived. It is pre-discovery hardening and polish, **not** the final release: Phase 6 must re-run the full audit once discovery exists.
+
+- Settings: tabs (ARIA tablist, arrow/Home/End keys, `?tab=` deep links); backgrounds (`prefs.background`, decorative `#bg-art`); haptics (`js/haptics.js`, off by default, feature-detected, skipped under reduced motion); companion toggle; dismissed-tips reset.
+- Export: `js/export.js` (`tripModel`, `tripToText`) feeds text export, clipboard copy and the print route `#/trip/:id/print` (print CSS hides chrome, black on white).
+- Data safety: `store.resync()` (retry after quota error), `store.adapter` exposed for tests, safety copy before migration (`adapter.saveSafetyCopy`, downloadable in Settings → Data), `NEWER_DATA`/`MIGRATION_FAILED` leave disk untouched and run an in-memory session with an explanatory banner.
+- PWA: `sw.js` `VERIFY`/`REPAIR` messages + integrity check on activate; `app.verifyCache()/repairCache()`; install prompt capture + iOS steps (`js/install.js`); hourly update check on foreground.
+- Fixes found by the new tests: skip link broke hash routing (`#view`), initial focus stole the skip link, long button labels overflowed at 360 px, coral/purple accent contrast.
+- Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
+- Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
 ## Phase 2.1 (season, weather, camping)
 

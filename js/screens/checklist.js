@@ -11,6 +11,7 @@ import { getTrip, tripBags, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
 import { pageHeader, tripSubtitle, weatherLabel } from './shared.js';
 import { returnTripDialog, saveTemplateDialog } from './tripDialogs.js';
+import { copyTripText, downloadTripText } from '../backup.js';
 
 const FILTERS = [
   ['all', 'All'],
@@ -69,6 +70,9 @@ export function ChecklistScreen(ctx) {
         { id: 'summary', label: 'Trip summary', icon: 'check' },
         { id: 'return', label: 'Plan return trip…', icon: 'arrowR' },
         { id: 'template', label: 'Save as template…', icon: 'copy' },
+        { id: 'print', label: 'Print list…', icon: 'file' },
+        { id: 'text', label: 'Export as text', icon: 'download' },
+        { id: 'copytext', label: 'Copy as text', icon: 'copy' },
         { id: 'edit', label: 'Edit trip', icon: 'edit' },
         { id: 'dup', label: 'Duplicate trip', icon: 'copy' },
         { id: 'archive', label: 'Archive trip', icon: 'archive' },
@@ -80,6 +84,9 @@ export function ChecklistScreen(ctx) {
     else if (choice === 'summary') navigate(`/trip/${tripId}/summary`);
     else if (choice === 'return') returnTripDialog({ store, tripId, navigate });
     else if (choice === 'template') saveTemplateDialog({ store, tripId });
+    else if (choice === 'print') navigate(`/trip/${tripId}/print`);
+    else if (choice === 'text') downloadTripText(store, tripId);
+    else if (choice === 'copytext') copyTripText(store, tripId);
     else if (choice === 'edit') navigate(`/trip/${tripId}/edit`);
     else if (choice === 'dup') {
       const copy = store.duplicateTrip(tripId);

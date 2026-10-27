@@ -5,14 +5,22 @@ const KEY = 'packwise.prefs.v1';
 export const ACCENTS = [
   { id: 'teal', label: 'Teal', accent: '#31B6A6', strong: '#1A7C74' },
   { id: 'blue', label: 'Blue', accent: '#4A9BE8', strong: '#2467B0' },
-  { id: 'purple', label: 'Purple', accent: '#8E7CE0', strong: '#5B48B8' },
-  { id: 'coral', label: 'Coral', accent: '#F28A72', strong: '#C4573F' },
+  { id: 'purple', label: 'Purple', accent: '#9D8CF0', strong: '#5240AC' },
+  { id: 'coral', label: 'Coral', accent: '#F28A72', strong: '#B4492F' },
   { id: 'amber', label: 'Amber', accent: '#E7B66C', strong: '#8A5A0B' },
   { id: 'green', label: 'Green', accent: '#5DBB63', strong: '#2E7D32' },
   { id: 'pink', label: 'Pink', accent: '#E8749F', strong: '#B03A69' },
 ];
 
-const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [] };
+export const BACKGROUNDS = [
+  { id: 'default', label: 'Default' },
+  { id: 'mountains', label: 'Mountains' },
+  { id: 'beach', label: 'Beach' },
+  { id: 'city', label: 'City' },
+  { id: 'minimal', label: 'Minimal' },
+];
+
+const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [], background: 'default', haptics: false };
 export const MOTION_LEVELS = [
   { id: 'reduced', label: 'Reduced' },
   { id: 'standard', label: 'Standard' },
@@ -41,6 +49,8 @@ function sanitize(p) {
   out.onboarded = p?.onboarded === true;
   if (typeof p?.lastTripId === 'string') out.lastTripId = p.lastTripId.slice(0, 64);
   out.companion = p?.companion !== false;
+  out.haptics = p?.haptics === true;
+  if (BACKGROUNDS.some((b) => b.id === p?.background)) out.background = p.background;
   if (MOTION_LEVELS.some((m) => m.id === p?.motion)) out.motion = p.motion;
   if (Array.isArray(p?.dismissed)) out.dismissed = p.dismissed.filter((x) => typeof x === 'string').map((x) => x.slice(0, 100)).slice(-200);
   return out;
@@ -82,6 +92,7 @@ export function dismissTip(id) {
 export function applyPrefs(prefs = getPrefs()) {
   const root = document.documentElement;
   root.setAttribute('data-motion', effectiveMotion(prefs));
+  root.setAttribute('data-bg', prefs.background);
   if (prefs.theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', prefs.theme);
   const accent = ACCENTS.find((a) => a.id === prefs.accent) || ACCENTS[0];
