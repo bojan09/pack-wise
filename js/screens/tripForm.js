@@ -6,7 +6,7 @@ import { toast } from '../ui/toast.js';
 import { BAG_KINDS, CONDITIONS, LIMITS, SEASONS, TRANSPORTS, TRIP_TYPES, cleanDate } from '../models.js';
 import { getTrip, sortedTrips } from '../selectors.js';
 import { BUILTIN_TEMPLATES, builtinTemplateItems, defaultDays } from '../templates.js';
-import { tripLengthDays } from '../progress.js';
+import { seasonForDates, tripLengthDays } from '../progress.js';
 import { pageHeader } from './shared.js';
 
 export function TripFormScreen(ctx, { mode }) {
@@ -28,6 +28,7 @@ export function TripFormScreen(ctx, { mode }) {
     conditions: [...(existing?.conditions || [])],
     bagKinds: ['carry-on'],
     bagsTouched: false,
+    seasonTouched: Boolean(existing?.season), // true once the user picked a season themselves
     startFrom: 'suggested', // suggested | template | copy | empty
     templateId: ctx.query.get('template') || '',
     copyFrom: '',
@@ -49,13 +50,14 @@ export function TripFormScreen(ctx, { mode }) {
       const formEl = h('form', { class: 'form-stack', novalidate: true });
 
       const destination = h('input', { type: 'text', name: 'destination', maxlength: LIMITS.destination, value: form.destination, placeholder: 'City, country or region', autocomplete: 'off', onInput: (e) => (form.destination = e.target.value) });
-      const start = h('input', { type: 'date', name: 'start', value: form.startDate, onChange: (e) => { form.startDate = cleanDate(e.target.value); end.min = form.startDate; } });
-      const end = h('input', { type: 'date', name: 'end', value: form.endDate, min: form.startDate || undefined, onChange: (e) => (form.endDate = cleanDate(e.target.value)) });
+      const start = h('input', { type: 'date', name: 'start', value: form.startDate, onChange: (e) => { form.startDate = cleanDate(e.target.value); end.min = form.startDate; autoSeason(); } });
+      const end = h('input', { type: 'date', name: 'end', value: form.endDate, min: form.startDate || undefined, onChange: (e) => { form.endDate = cleanDate(e.target.value); autoSeason(); } });
       const name = h('input', { type: 'text', name: 'name', maxlength: LIMITS.name, value: form.name, placeholder: 'Defaults to the destination', onInput: (e) => (form.name = e.target.value) });
       const travelers = h('input', { type: 'number', name: 'travelers', min: 1, max: LIMITS.maxTravelers, value: form.travelers, inputmode: 'numeric', onInput: (e) => (form.travelers = Number(e.target.value) || 1) });
       const transport = selectInput({ options: TRANSPORTS, value: form.transport, name: 'transport' });
       transport.addEventListener('change', (e) => (form.transport = e.target.value));
       const notes = h('textarea', { name: 'notes', rows: 3, maxlength: LIMITS.notes, placeholder: 'Anything to remember for this trip', onInput: (e) => (form.notes = e.target.value) }, form.notes);
+      const seasonHint = h('p', { class: 'muted small', 'aria-live': 'polite' });
       const errorBox = h('div', { class: 'form-errors', role: 'alert' });
 
       function submit(e) {
@@ -108,11 +110,22 @@ export function TripFormScreen(ctx, { mode }) {
         form.bagKinds = kinds;
       }
 
+      /** Balkan seasons from the trip dates, unless the user chose a season themselves. */
+      function autoSeason() {
+        if (form.seasonTouched || !form.startDate) return;
+        const s = seasonForDates(form.startDate, form.endDate);
+        if (!s) return;
+        form.season = s;
+        formEl.querySelectorAll('input[name=season]').forEach((i) => { i.checked = i.value === s; });
+        const label = SEASONS.find((x) => x.id === s)?.label || s;
+        seasonHint.textContent = `Set from your dates: ${label}. Change it if you like.`;
+      }
+
       function weatherSection() {
-        const seasonSel = segmented({ name: 'season', label: 'Season', value: form.season, options: SEASONS, onChange: (v) => (form.season = v) });
+        const seasonSel = segmented({ name: 'season', label: 'Season', value: form.season, options: SEASONS, onChange: (v) => { form.season = v; form.seasonTouched = true; seasonHint.textContent = ''; } });
         seasonSel.classList.add('wrap');
         const chips = h('div', { class: 'cond-chips', role: 'group', 'aria-label': 'Expected weather' }, CONDITIONS.map((c) => h('label', { class: 'cond-chip' }, h('input', { type: 'checkbox', name: 'conditions', value: c.id, checked: form.conditions.includes(c.id), onChange: () => { form.conditions = [...chips.querySelectorAll('input:checked')].map((i) => i.value); } }), h('span', {}, icon(c.icon, { size: 16 }), c.label))));
-        return h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '4' }), 'Season & weather'), seasonSel, h('p', { class: 'setting-label', text: 'What do you expect outside? Pick any that apply.' }), chips, h('p', { class: 'muted small', text: 'Optional. This shapes the suggested list (clothing, rain gear, camping shelter and sleeping gear). It is not a forecast, so check one before you go.' }));
+        return h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '4' }), 'Season & weather'), seasonSel, seasonHint, h('p', { class: 'muted small', text: 'Balkan seasons: spring Mar–May · summer Jun–Aug · fall Sep–Nov · winter Dec–Feb.' }), h('p', { class: 'setting-label', text: 'What do you expect outside? Pick any that apply.' }), chips, h('p', { class: 'muted small', text: 'Optional. This shapes the suggested list (clothing, rain gear, camping shelter and sleeping gear). It is not a forecast, so check one before you go.' }));
       }
 
       function startFromSection() {

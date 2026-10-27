@@ -29,6 +29,10 @@ A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScrip
 - **Camping**: a "Camping gear" bag option (auto-suggested with a backpack when you pick the Camping type), a new "Camping gear" category and a much fuller camping list (shelter, sleeping, cooking, water, tools, hygiene, safety) that adapts to the weather you choose.
 - **Season & weather** replace the single climate option: pick a season (spring, summer, fall, winter) and any expected conditions (hot, warm, cool, cold, rainy, snowy, windy). The suggested list, including camping shelter and sleeping gear, follows your choices. It is not a forecast.
 
+## Added in Phase 2.2 (v1.1.2)
+
+- **Balkan seasons from your dates:** choosing departure/return dates sets the season automatically using the meteorological calendar used across the Balkans: spring Mar–May, summer Jun–Aug, fall Sep–Nov, winter Dec–Feb. A trip that spans two seasons gets the one with most days (a tie goes to the departure date). Pick a season yourself and your choice is never overridden.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

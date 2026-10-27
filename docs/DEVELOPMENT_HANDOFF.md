@@ -49,6 +49,12 @@ Last updated: end of **Phase 2.1** (smart travel + Packing Studio). Phase 3 is n
 - Form: Season & weather is section 4; choosing the Camping type ticks Backpack + Camping gear unless the user already touched the bag tiles.
 - Verified: 40 unit, 42 e2e (adds form flow, bag auto-suggest, weather-driven list, studio camping tokens, edit round-trip). Chromium only.
 
+## Phase 2.2 (Balkan seasons)
+
+- `seasonOfDate` / `seasonForDates` in `js/progress.js` (pure, unit-tested incl. boundaries, year wrap, ties). The form calls it on date change unless `seasonTouched`; editing a trip that already has a season counts as touched.
+- Assumption: northern hemisphere, meteorological seasons. Mountain areas can be wintry earlier/later than the calendar says; users add Snowy/Cold themselves. Southern-hemisphere support would need a region setting (not built).
+- Verified: 42 unit, 43 e2e (adds auto-season, multi-season trips, manual override, season-driven list). Existing e2e fixtures use December dates, so those trips now correctly get winter items (e.g. "Warm jacket").
+
 ## Phase 2 known gaps
 
 - Chromium only; Safari/iOS handling of `preserve-3d` with `backface-visibility`, touch drag and haptics are **unverified**. Mobile devices were not tested; only emulated viewports.

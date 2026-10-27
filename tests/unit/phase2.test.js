@@ -333,3 +333,38 @@ test('season and weather round-trip through backup and are copied to a return tr
   assert.deepEqual(parsed.data.trips.find((x) => x.id === t.id).conditions, ['cool', 'rainy']);
   assert.equal(parsed.data.trips.find((x) => x.id === t.id).season, 'fall');
 });
+
+// ----------------------------------------------------- Balkan seasons from dates
+import { seasonForDates, seasonOfDate } from '../../js/progress.js';
+
+test('seasons follow the Balkan (meteorological) calendar', () => {
+  const m = (mm) => seasonOfDate(`2026-${String(mm).padStart(2, '0')}-15`);
+  assert.deepEqual([12, 1, 2].map(m), ['winter', 'winter', 'winter']);
+  assert.deepEqual([3, 4, 5].map(m), ['spring', 'spring', 'spring']);
+  assert.deepEqual([6, 7, 8].map(m), ['summer', 'summer', 'summer']);
+  assert.deepEqual([9, 10, 11].map(m), ['fall', 'fall', 'fall']);
+  // boundaries
+  assert.equal(seasonOfDate('2026-02-28'), 'winter');
+  assert.equal(seasonOfDate('2026-03-01'), 'spring');
+  assert.equal(seasonOfDate('2026-05-31'), 'spring');
+  assert.equal(seasonOfDate('2026-06-01'), 'summer');
+  assert.equal(seasonOfDate('2026-08-31'), 'summer');
+  assert.equal(seasonOfDate('2026-09-01'), 'fall');
+  assert.equal(seasonOfDate('2026-11-30'), 'fall');
+  assert.equal(seasonOfDate('2026-12-01'), 'winter');
+  assert.equal(seasonOfDate(''), '');
+  assert.equal(seasonOfDate('nope'), '');
+});
+
+test('a trip gets the season holding most of its days; ties go to the departure date', () => {
+  assert.equal(seasonForDates('2026-07-10', ''), 'summer');
+  assert.equal(seasonForDates('2026-07-10', '2026-07-20'), 'summer');
+  assert.equal(seasonForDates('2026-11-28', '2026-12-05'), 'winter'); // 3 fall days vs 5 winter
+  assert.equal(seasonForDates('2027-02-27', '2027-03-10'), 'spring'); // 2 winter vs 10 spring
+  assert.equal(seasonForDates('2026-08-31', '2026-09-03'), 'fall');
+  assert.equal(seasonForDates('2026-08-30', '2026-09-02'), 'summer'); // 2 vs 2: departure wins
+  assert.equal(seasonForDates('2026-12-20', '2027-01-05'), 'winter'); // year boundary
+  assert.equal(seasonForDates('2026-07-10', '2026-07-01'), 'summer'); // bad range falls back to departure
+  assert.equal(seasonForDates('', '2026-07-01'), '');
+  assert.ok(['spring', 'summer', 'fall', 'winter'].includes(seasonForDates('2026-01-01', '2030-12-31'))); // very long trip stays bounded
+});

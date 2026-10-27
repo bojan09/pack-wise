@@ -28,6 +28,44 @@ export function taskProgress(tasks) {
 export const isItemPacked = (item) => item.packed >= item.target;
 export const essentialsLeft = (items) => items.filter((i) => i.essential && !isItemPacked(i));
 
+// ---- seasons (Balkan calendar) ----
+// PackWise is built for the Balkans (northern hemisphere, continental climate), so seasons
+// follow the meteorological calendar used across the region.
+export const BALKAN_SEASON_MONTHS = {
+  spring: [3, 4, 5],
+  summer: [6, 7, 8],
+  fall: [9, 10, 11],
+  winter: [12, 1, 2],
+};
+
+/** Season of a YYYY-MM-DD date, or '' if the date is not valid. */
+export function seasonOfDate(dateStr) {
+  const d = parseLocalDate(dateStr);
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const month = d.getMonth() + 1;
+  return Object.keys(BALKAN_SEASON_MONTHS).find((s) => BALKAN_SEASON_MONTHS[s].includes(month)) || '';
+}
+
+/**
+ * Season a trip mostly falls in: the season with the most days; a tie goes to the departure
+ * date's season. Without an end date it is the departure date's season.
+ */
+export function seasonForDates(startDate, endDate) {
+  const first = seasonOfDate(startDate);
+  if (!first || !endDate || endDate < startDate) return first;
+  const counts = {};
+  const day = parseLocalDate(startDate);
+  const last = parseLocalDate(endDate);
+  for (let n = 0; day <= last && n < 366; n += 1) {
+    const s = seasonOfDate(`${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`);
+    counts[s] = (counts[s] || 0) + 1;
+    day.setDate(day.getDate() + 1);
+  }
+  const best = Math.max(...Object.values(counts));
+  const winners = Object.keys(counts).filter((s) => counts[s] === best);
+  return winners.includes(first) ? first : winners[0];
+}
+
 // ---- dates (YYYY-MM-DD strings, interpreted in the device's local time zone) ----
 
 export function parseLocalDate(str) {

@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.1.1'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.1.2'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -753,9 +753,9 @@ await test('checklist: bulk select (pack, unpack, move to bag, category, delete 
   await page.click('.bulk-bar button:has-text("Done")');
   assert.equal(await page.locator('.bulk-bar').count(), 0);
   // sort by priority puts high first within a category
-  await page.evaluate((tid) => { const { store } = window.__packwise; const it = store.state.items.find((i) => i.tripId === tid && i.name === 'Jacket'); store.updateItem(it.id, { priority: 'high', category: 'clothing' }); }, id);
+  await page.evaluate((tid) => { const { store } = window.__packwise; const it = store.state.items.find((i) => i.tripId === tid && /jacket$/i.test(i.name)); store.updateItem(it.id, { priority: 'high', category: 'clothing' }); }, id); // Dec dates => winter => 'Warm jacket'
   await page.selectOption('select[name=sortBy]', 'priority');
-  assert.equal(await page.locator('.category-card >> nth=0').locator('.item-name').first().innerText(), 'Jacket');
+  assert.match(await page.locator(".category-card >> nth=0").locator(".item-name").first().innerText(), /jacket/i);
   await page.selectOption('select[name=sortBy]', 'name');
   const names = await page.locator('.category-card >> nth=0').locator('.item-name').allInnerTexts();
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
@@ -1004,6 +1004,46 @@ await test('create trip: camping auto-suggests camping gear + backpack; season a
   await page.waitForSelector('text=Fall · Cool, Rainy, Windy');
 });
 
+
+await test('season is suggested from Balkan dates and respects a manual choice', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/trips/new`);
+  const season = () => page.evaluate(() => document.querySelector('input[name=season]:checked')?.value || '');
+  assert.equal(await season(), '');
+  await page.fill('input[name=start]', '2026-07-10');
+  assert.equal(await season(), 'summer');
+  assert.match(await page.locator('p[aria-live=polite]').first().innerText(), /Set from your dates: Summer/);
+  await page.fill('input[name=end]', '2026-07-20');
+  assert.equal(await season(), 'summer');
+  await page.fill('input[name=start]', '2027-01-05');
+  await page.fill('input[name=end]', '2027-01-12');
+  assert.equal(await season(), 'winter');
+  await page.fill('input[name=start]', '2026-11-28'); // mostly December
+  await page.fill('input[name=end]', '2026-12-05');
+  assert.equal(await season(), 'winter');
+  assert.match(await page.locator('text=Balkan seasons').innerText(), /Dec–Feb/);
+  // manual pick sticks when dates change
+  await page.click('label.seg-opt:has-text("Spring")');
+  await page.fill('input[name=start]', '2026-08-01');
+  await page.fill('input[name=end]', '2026-08-05');
+  assert.equal(await season(), 'spring');
+  await page.fill('input[name=destination]', 'Ohrid');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Ohrid")');
+  assert.equal((await tripState(page)).trips[0].season, 'spring');
+  // a fresh trip with summer dates gets the summer list without touching the season control
+  await page.goto(`${BASE}#/trips/new`);
+  await page.fill('input[name=destination]', 'Budva');
+  await page.fill('input[name=start]', '2026-07-01');
+  await page.fill('input[name=end]', '2026-07-08');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Budva")');
+  const st = await tripState(page);
+  const budva = st.trips.find((t) => t.name === 'Budva');
+  assert.equal(budva.season, 'summer');
+  assert.ok(st.items.some((i) => i.tripId === budva.id && i.name === 'Sunscreen'));
+});
+
 // ------------------------------------------------------------- responsive
 const viewports = [[360, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
 for (const [w, h] of viewports) {
@@ -1047,7 +1087,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.1.1']);
+  assert.deepEqual(keys, ['packwise-v1.1.2']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -1087,7 +1127,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.1.1', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.1.2', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
