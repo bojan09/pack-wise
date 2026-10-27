@@ -7,9 +7,10 @@ import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { companionBubble } from '../ui/bubble.js';
 import { toast } from '../ui/toast.js';
 import { ADMISSION, googleMapsUrl } from '../guide.js';
-import { dayCount, draftPlan, groupByDay, groupByInterest, packHints, planned, resolveGuide } from '../plan.js';
+import { GUIDE_FOOT, dayCount, draftPlan, groupByDay, groupByInterest, guideFilename, guideModel, guideToText, packHints, planned, resolveGuide } from '../plan.js';
+import { downloadFile } from '../backup.js';
 import { guideMessage } from '../companion.js';
-import { dismissTip, getPrefs, setPrefs } from '../prefs.js';
+import { getPrefs, setPrefs } from '../prefs.js';
 import { getTrip, tripEntries, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
 import { guideTabs, pageHeader, tripSubtitle } from './shared.js';
@@ -21,7 +22,13 @@ export function GuideScreen(ctx) {
   ctx.setLastTrip(tripId);
 
   let view = 'interest'; // 'interest' | 'day'
-  const hintKey = (id) => `hint:${tripId}:${id}`;
+
+  // Earlier builds kept hidden packing ideas in device preferences; move them onto the trip (so backups carry them).
+  const legacy = getPrefs().dismissed.filter((d) => d.startsWith(`hint:${tripId}:`));
+  if (legacy.length) {
+    for (const d of legacy) store.setHintHidden(tripId, d.slice(`hint:${tripId}:`.length), true);
+    setPrefs({ dismissed: getPrefs().dismissed.filter((d) => !legacy.includes(d)) });
+  }
 
   // ------------------------------------------------------------------ actions
   function remove(row) {
@@ -44,6 +51,48 @@ export function GuideScreen(ctx) {
     toast('Day plan cleared. Your saved items are untouched.', { action: { label: 'Undo', run: () => store.setPlan(tripId, before) } });
   }
 
+  // ---- drag reorder (within a day); buttons and Alt+Arrow remain the keyboard path
+  function startDrag(e, li, ul, rows) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    li.classList.add('is-dragging');
+    const onMove = (ev) => {
+      const rest = [...ul.children].filter((x) => x !== li);
+      const before = rest.find((sib) => { const r = sib.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+      if ((before || null) !== li.nextElementSibling) ul.insertBefore(li, before || null);
+    };
+    const finish = (commit) => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      li.classList.remove('is-dragging');
+      if (!commit) { ctx.refresh(); return; }
+      const byKey = new Map(rows.map((r) => [r.key, r]));
+      const next = [...ul.children].map((x, order) => { const r = byKey.get(x.dataset.ref); return r ? { kind: r.kind, refId: r.entry.refId, day: r.entry.day, order } : null; }).filter(Boolean);
+      if (next.some((a, i) => rows[i]?.key !== `${a.kind}:${a.refId}`)) store.setPlan(tripId, next);
+      else ctx.refresh();
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
+  }
+
+  function modelNow() {
+    const trip = getTrip(store.state, tripId);
+    const rows = resolveGuide(tripEntries(store.state, tripId));
+    return { trip, model: guideModel(trip, rows, dayCount(trip, rows)) };
+  }
+  async function copyText() {
+    try { await navigator.clipboard.writeText(guideToText(modelNow().model)); toast('Guide copied. Paste it into any app.', { tone: 'success' }); } catch { toast('Copying was blocked by the browser. Use “Save as .txt” instead.', { tone: 'error' }); }
+  }
+  function saveText() {
+    const { trip, model } = modelNow();
+    downloadFile(guideFilename(trip), guideToText(model), 'text/plain');
+    toast('Guide saved as a text file.', { tone: 'success' });
+  }
+
   function addHint(hint) {
     const item = store.addItem(tripId, { name: hint.add.name, category: hint.add.category, target: 1, notes: 'Suggested by My Guide' });
     if (item) toast(`Added “${item.name}” to your packing list`, { tone: 'success', action: { label: 'Undo', run: () => store.deleteItem(item.id) } });
@@ -57,7 +106,7 @@ export function GuideScreen(ctx) {
     return sel;
   }
 
-  function guideRow(row, { days, canMove, first, last }) {
+  function guideRow(row, { days, canMove, first, last, dayRows }) {
     const tags = [];
     if (row.kind === 'place' && row.place) tags.push(h('span', { class: `tag adm-tag adm-tag-${row.place.admission}`, text: ADMISSION[row.place.admission].label }));
     if (row.kind === 'food') tags.push(h('span', { class: 'tag', text: 'Food & drink' }));
@@ -75,6 +124,7 @@ export function GuideScreen(ctx) {
       h('div', { class: 'guide-row-actions' },
         row.missing ? null : dayPicker(row, days),
         canMove ? h('div', { class: 'move-btns' },
+          h('button', { type: 'button', class: 'drag-handle', 'data-key': `drag-${row.key}`, 'aria-label': `Reorder ${row.title}. Drag, or press Alt plus Up or Down arrow.`, title: 'Drag to reorder', onPointerdown: (e) => startDrag(e, e.currentTarget.closest('li'), e.currentTarget.closest('ul'), dayRows), onKeydown: (e) => { if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); store.moveEntry(tripId, row.kind, row.entry.refId, e.key === 'ArrowUp' ? -1 : 1); } } }, icon('grip', { size: 18 })),
           iconButton({ icon: 'arrowU', label: `Move ${row.title} earlier`, key: `up-${row.key}`, onClick: () => store.moveEntry(tripId, row.kind, row.entry.refId, -1), className: first ? 'is-dim' : '' }),
           iconButton({ icon: 'arrowD', label: `Move ${row.title} later`, key: `down-${row.key}`, onClick: () => store.moveEntry(tripId, row.kind, row.entry.refId, 1), className: last ? 'is-dim' : '' })) : null,
         iconButton({ icon: 'trash', label: `Remove ${row.title} from my guide`, key: `rm-${row.key}`, onClick: () => remove(row) })),
@@ -92,9 +142,10 @@ export function GuideScreen(ctx) {
       const days = dayCount(trip, rows);
       const prefs = getPrefs();
       const hints = packHints(rows, tripItems(state, tripId));
-      const open = hints.filter((x) => !x.have && !prefs.dismissed.includes(hintKey(x.id)));
+      const hidden = new Set(trip.hiddenHints);
+      const open = hints.filter((x) => !x.have && !hidden.has(x.id));
       const covered = hints.filter((x) => x.have).length;
-      const hiddenCount = hints.filter((x) => !x.have && prefs.dismissed.includes(hintKey(x.id))).length;
+      const hiddenCount = hints.filter((x) => !x.have && hidden.has(x.id)).length;
       const placeN = rows.filter((r) => r.kind === 'place').length;
       const foodN = rows.length - placeN;
       const plannedN = planned(rows);
@@ -121,6 +172,10 @@ export function GuideScreen(ctx) {
         h('div', { class: 'chips', role: 'group', 'aria-label': 'Arrange by' },
           chip({ label: 'By interest', active: view === 'interest', key: 'v-interest', onClick: () => { view = 'interest'; ctx.refresh(); } }),
           chip({ label: 'By day', active: view === 'day', key: 'v-day', onClick: () => { view = 'day'; ctx.refresh(); } })),
+        h('div', { class: 'plan-actions plan-share' },
+          button({ label: 'Copy as text', icon: 'copy', variant: 'ghost', key: 'copy-guide', onClick: copyText }),
+          button({ label: 'Save as .txt', icon: 'download', variant: 'ghost', key: 'save-guide', onClick: saveText }),
+          button({ label: 'Print', icon: 'file', variant: 'ghost', key: 'print-guide', href: `#/trip/${tripId}/guide/print` })),
         h('div', { class: 'plan-actions' },
           button({ label: 'Suggest a draft plan', icon: 'sparkle', variant: 'secondary', disabled: unplanned === 0, key: 'draft', onClick: () => { suggestPlan(rows, days); ctx.refresh(); } }),
           plannedN ? button({ label: 'Clear day plan', icon: 'restore', variant: 'secondary', key: 'clear-plan', onClick: () => { clearPlan(rows); ctx.refresh(); } }) : null),
@@ -128,7 +183,7 @@ export function GuideScreen(ctx) {
 
       const listFor = (group, opts) => h('section', { class: 'guide-section', 'aria-labelledby': `g-${group.id ?? 'x'}` },
         h('div', { class: 'guide-section-head' }, h('h2', { id: `g-${group.id ?? 'x'}`, class: 'section-title', text: group.label }), h('span', { class: 'muted small', text: plural(group.rows.length, 'item') })),
-        group.rows.length ? h('ul', { class: 'guide-list' }, group.rows.map((r, i) => guideRow(r, { days, canMove: opts.moves && group.rows.length > 1, first: i === 0, last: i === group.rows.length - 1 }))) : h('p', { class: 'muted small', text: opts.empty }));
+        group.rows.length ? h('ul', { class: 'guide-list' }, group.rows.map((r, i) => guideRow(r, { days, canMove: opts.moves && group.rows.length > 1, first: i === 0, last: i === group.rows.length - 1, dayRows: group.rows }))) : h('p', { class: 'muted small', text: opts.empty }));
 
       const body = view === 'interest'
         ? groupByInterest(rows).map((g) => listFor({ ...g, id: g.id }, { moves: false }))
@@ -142,9 +197,9 @@ export function GuideScreen(ctx) {
             h('div', { class: 'hint-text' }, h('strong', { text: x.title }), h('span', { class: 'muted small', text: x.why })),
             h('div', { class: 'hint-actions' },
               x.add ? button({ label: 'Add to packing list', icon: 'plus', variant: 'secondary', key: `hint-add-${x.id}`, onClick: () => addHint(x) }) : null,
-              button({ label: 'Not now', variant: 'ghost', ariaLabel: `Hide suggestion: ${x.title}`, key: `hint-no-${x.id}`, onClick: () => { dismissTip(hintKey(x.id)); ctx.refresh(); } }))))) : h('p', { class: 'muted small', text: 'No open suggestions.' }),
+              button({ label: 'Not now', variant: 'ghost', ariaLabel: `Hide suggestion: ${x.title}`, key: `hint-no-${x.id}`, onClick: () => store.setHintHidden(tripId, x.id, true) }))))) : h('p', { class: 'muted small', text: 'No open suggestions.' }),
           covered ? h('p', { class: 'muted small', text: `${plural(covered, 'idea')} already look covered by your packing list.` }) : null,
-          hiddenCount ? h('div', {}, button({ label: `Show ${hiddenCount} hidden`, variant: 'ghost', key: 'hint-reset', onClick: () => { setPrefs({ dismissed: getPrefs().dismissed.filter((d) => !d.startsWith(`hint:${tripId}:`)) }); ctx.refresh(); } })) : null,
+          hiddenCount ? h('div', {}, button({ label: `Show ${hiddenCount} hidden`, variant: 'ghost', key: 'hint-reset', onClick: () => store.resetHints(tripId) })) : null,
           h('a', { class: 'link small', href: `#/trip/${tripId}` }, 'Open packing list'))
         : null;
 
@@ -162,4 +217,29 @@ export function GuideScreen(ctx) {
       ),
     );
   }
+}
+
+/** Print-friendly guide: black on white, one block per day (or per interest). */
+export function GuidePrintScreen(ctx) {
+  const { store, params } = ctx;
+  const tripId = params.id;
+  if (!getTrip(store.state, tripId)) return { redirect: '/trips', title: 'Trip not found', build: () => h('div') };
+  return {
+    title: 'Print guide',
+    static: true,
+    build() {
+      const trip = getTrip(store.state, tripId);
+      const rows = resolveGuide(tripEntries(store.state, tripId));
+      const m = guideModel(trip, rows, dayCount(trip, rows));
+      const box = (done) => h('span', { class: `pbox${done ? ' is-done' : ''}`, 'aria-hidden': 'true' }, done ? '✓' : '');
+      return h('div', { class: 'screen print-screen' },
+        h('div', { class: 'print-actions no-print' }, button({ label: 'Back', icon: 'chevL', variant: 'ghost', href: `#/trip/${tripId}/guide` }), h('span', { class: 'muted small', text: 'Use your browser’s print dialog to print or save as PDF.' }), button({ label: 'Print', icon: 'file', variant: 'primary', onClick: () => window.print() })),
+        h('article', { class: 'print-sheet' },
+          h('h1', { tabindex: '-1', text: m.title }),
+          m.meta ? h('p', { class: 'print-meta', text: m.meta }) : null,
+          m.byDay ? h('p', { class: 'print-meta', text: 'A draft arranged by hand: no times, routes or durations.' }) : null,
+          m.count ? m.sections.map((s) => h('section', { class: 'print-section' }, h('h2', { text: s.label }), h('ul', {}, s.rows.map((r) => h('li', {}, r.tried === null ? null : box(r.tried), h('span', { class: 'print-name', text: `${r.title}${r.sub && !r.missing ? ` (${r.sub})` : ''}${r.tag ? ` [${r.tag}]` : ''}` }), r.note ? h('span', { class: 'print-note', text: ` — ${r.note}` }) : null))))) : h('p', { text: 'Nothing saved yet.' }),
+          h('p', { class: 'print-foot', text: `${GUIDE_FOOT} Printed from PackWise.` })));
+    },
+  };
 }

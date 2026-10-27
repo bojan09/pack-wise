@@ -168,6 +168,15 @@ export function createStore(adapter) {
     return next;
   }
 
+  /** Hide / show one My Guide packing idea for this trip. Stored on the trip, so it travels with backups. */
+  function setHintHidden(tripId, hintId, hidden) {
+    const cur = find('trips', tripId);
+    if (!cur) return null;
+    const rest = cur.hiddenHints.filter((x) => x !== hintId);
+    return updateTrip(tripId, { hiddenHints: hidden ? [...rest, hintId] : rest });
+  }
+  const resetHints = (tripId) => updateTrip(tripId, { hiddenHints: [] });
+
   function duplicateTrip(id, name) {
     const src = find('trips', id);
     if (!src) return null;
@@ -663,6 +672,8 @@ export function createStore(adapter) {
     saveTripAsTemplate,
     setSaved,
     setTried,
+    setHintHidden,
+    resetHints,
     planEntry,
     moveEntry,
     setPlan,

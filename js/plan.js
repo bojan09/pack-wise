@@ -118,3 +118,50 @@ export function packHints(rows, items) {
   if (outdoors.length >= 3) defs.push({ id: 'sun', title: 'Sun protection', why: `${outdoors.length} saved places are outdoors or partly outdoors. Check the forecast near your dates.`, add: { name: 'Sunscreen', category: 'toiletries' }, have: has(/sun ?screen|sun ?block|spf|sun hat|\bhat\b|cap\b/) });
   return defs;
 }
+
+// ------------------------------------------------------------ text / print
+/**
+ * Display-agnostic model for the text export and the print view of a trip's guide.
+ * By day when anything is planned, otherwise by interest. Pure.
+ */
+export function guideModel(trip, rows, days) {
+  const meta = [trip.destination && trip.destination !== trip.name ? trip.destination : '', trip.startDate ? `${trip.startDate}${trip.endDate && trip.endDate !== trip.startDate ? ` to ${trip.endDate}` : ''}` : ''].filter(Boolean).join(' · ');
+  const line = (r) => ({
+    title: r.title,
+    sub: r.sub,
+    tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : '',
+    tried: r.kind === 'food' ? Boolean(r.entry.tried) : null,
+    note: (r.entry.note || '').replace(/\s*\n\s*/g, ' '),
+    missing: r.missing,
+  });
+  const byDay = planned(rows) > 0;
+  const sections = byDay
+    ? groupByDay(rows, days).filter((g) => g.rows.length).map((g) => ({ label: g.day === null ? 'Not yet planned' : `Day ${g.day}`, rows: g.rows.map(line) }))
+    : groupByInterest(rows).map((g) => ({ label: g.label, rows: g.rows.map(line) }));
+  return { title: `${trip.name} — trip guide`, meta, byDay, sections, count: rows.length };
+}
+
+const ADMISSION_LABEL = { free: 'Free area', paid: 'Ticketed', check: 'Check admission' };
+const FOOT = 'Prices, opening hours and travel times are not included: check admission and hours before you go. Diet and allergen details are general: confirm ingredients with the cook.';
+
+export function guideToText(model) {
+  const out = [`PackWise — ${model.title}`, model.meta, model.byDay ? 'A draft you arranged yourself: no times, routes or durations.' : ''].filter(Boolean);
+  out.push('');
+  for (const s of model.sections) {
+    out.push(s.label.toUpperCase());
+    for (const r of s.rows) {
+      const box = r.tried === null ? '-' : r.tried ? '[x]' : '[ ]';
+      out.push(`  ${box} ${r.title}${r.sub && !r.missing ? ` (${r.sub})` : r.missing ? ' (no longer in the guide)' : ''}${r.tag ? ` [${r.tag}]` : ''}${r.note ? ` — ${r.note}` : ''}`);
+    }
+    out.push('');
+  }
+  out.push(FOOT, 'Exported from PackWise — your data stays on your device.');
+  return out.join('\n');
+}
+
+export const GUIDE_FOOT = FOOT;
+
+export function guideFilename(trip) {
+  const slug = trip.name.toLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'trip';
+  return `packwise-guide-${slug}.txt`;
+}

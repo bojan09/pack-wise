@@ -184,6 +184,7 @@ export function normalizeTrip(raw) {
     conditions: normalizeConditions(raw.conditions ?? LEGACY_CLIMATE[raw.climate]),
     notes: cleanMultiline(raw.notes, LIMITS.notes),
     returnOf: isId(raw.returnOf) ? raw.returnOf : '', // set on a journey-home trip; points at the original
+    hiddenHints: Array.isArray(raw.hiddenHints) ? [...new Set(raw.hiddenHints.filter((x) => typeof x === 'string' && /^[a-z0-9-]{1,30}$/.test(x)))].slice(0, 20) : [], // My Guide packing ideas the user chose not to see
     isDemo: raw.isDemo === true, // sample data, removable from Settings
     status: raw.status === 'archived' ? 'archived' : 'active',
     createdAt,

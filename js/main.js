@@ -225,6 +225,7 @@ async function boot() {
     { path: '/trip/:id/studio', name: 'studio', nav: 'studio', screen: StudioScreen },
     { path: '/trip/:id/explore', name: 'explore', nav: 'explore', screen: lazy(() => import('./screens/explore.js'), 'ExploreScreen') },
     { path: '/trip/:id/guide', name: 'guide', nav: 'explore', screen: lazy(() => import('./screens/guide.js'), 'GuideScreen') },
+    { path: '/trip/:id/guide/print', name: 'guide-print', nav: 'pack', screen: lazy(() => import('./screens/guide.js'), 'GuidePrintScreen') },
     { path: '/trip/:id/taste', name: 'taste', nav: 'explore', screen: lazy(() => import('./screens/taste.js'), 'TasteScreen') },
     { path: '/explore', name: 'explore-home', nav: 'explore', screen: ExploreRedirectScreen },
     { path: '/trip/:id/print', name: 'print', nav: 'pack', screen: PrintScreen },

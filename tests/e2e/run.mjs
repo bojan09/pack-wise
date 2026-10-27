@@ -2553,6 +2553,111 @@ await test('guide: accessible names, 360px layout, by-day view and offline editi
 }, { sw: true });
 
 
+await test('guide: copy, download and print the guide; text matches what is on screen', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia', start: '2027-05-01', end: '2027-05-03' });
+  const id = await firstTrip(page);
+  await page.evaluate((tid) => { const st = window.__packwise.store; ['kalemegdan-park-fortress', 'nikola-tesla-museum'].forEach((r) => st.setSaved(tid, 'place', `belgrade/${r}`, true)); st.setSaved(tid, 'food', 'cevapi', true); st.planEntry(tid, 'place', 'belgrade/kalemegdan-park-fortress', 2); return st.flush(); }, id);
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  await page.evaluate(() => { window.__copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true }); });
+  await page.click('button:has-text("Copy as text")');
+  await page.waitForFunction(() => window.__copied.length > 0);
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, /DAY 2\n {2}- Kalemegdan Park & Fortress \(Stari Grad · Belgrade\) \[Free area\]/);
+  assert.match(copied, /NOT YET PLANNED/);
+  assert.match(copied, /Ćevapi/);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save as .txt")')]);
+  assert.match(dl.suggestedFilename(), /^packwise-guide-belgrade-serbia\.txt$/);
+  assert.equal(readFileSync(await dl.path(), 'utf8'), copied, 'download and copy are identical');
+  await page.click('a:has-text("Print")');
+  await page.waitForSelector('.print-sheet');
+  assert.ok(page.url().endsWith(`/trip/${id}/guide/print`));
+  const sheet = await page.locator('.print-sheet').innerText();
+  assert.match(sheet, /Belgrade, Serbia — trip guide/);
+  assert.match(sheet, /Day 2/);
+  assert.match(sheet, /Prices, opening hours and travel times are not included/);
+  assert.ok(!/\b\d{1,2}:\d{2}\b/.test(sheet));
+  assert.equal(await page.locator('.print-screen .no-print').count() > 0, true);
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await page.locator('.no-print').first().isVisible(), false, 'controls are hidden when printing');
+});
+
+await test('guide: drag reorder within a day (pointer) and Alt+Arrow; persists', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia', start: '2027-05-01', end: '2027-05-03' });
+  const id = await firstTrip(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const b = CATALOG.destinations.find((d) => d.id === 'belgrade');
+  const three = b.places.slice(0, 3);
+  await page.evaluate(({ tid, refs }) => { const st = window.__packwise.store; refs.forEach((r) => { st.setSaved(tid, 'place', r, true); st.planEntry(tid, 'place', r, 1); }); return st.flush(); }, { tid: id, refs: three.map((p) => `belgrade/${p.id}`) });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  await page.setViewportSize({ width: 1280, height: 1500 }); // the whole list stays on screen so synthetic mouse moves are delivered
+  await page.click('.chip:has-text("By day")');
+  const day1 = () => page.evaluate(() => [...[...document.querySelectorAll('.guide-section')].find((s) => s.querySelector('h2').textContent === 'Day 1').querySelectorAll('.guide-row strong')].map((e) => e.textContent));
+  assert.deepEqual(await day1(), three.map((p) => p.name));
+  // drag the first row below the last one
+  const handle = page.locator(`.drag-handle[aria-label^="Reorder ${three[0].name}"]`);
+  const hb = await handle.boundingBox();
+  const lastRow = await page.locator(`.guide-row[data-ref="place:belgrade/${three[2].id}"]`).boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width / 2, lastRow.y + lastRow.height - 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForFunction((n) => { const o = window.__packwise.store.state.entries.filter((e) => e.day === 1).sort((a, b) => a.order - b.order).map((e) => e.refId); return o[2] === `belgrade/${n}`; }, three[0].id);
+  assert.deepEqual(await day1(), [three[1].name, three[2].name, three[0].name]);
+  // keyboard: Alt+ArrowUp on the last row moves it up one
+  await page.focus(`.drag-handle[aria-label^="Reorder ${three[0].name}"]`);
+  await page.keyboard.press('Alt+ArrowUp');
+  assert.deepEqual(await day1(), [three[1].name, three[0].name, three[2].name]);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-key')), `drag-place:belgrade/${three[0].id}`);
+  await page.evaluate(() => window.__packwise.store.flush());
+  await reloadSettled(page);
+  await page.click('.chip:has-text("By day")');
+  assert.deepEqual(await day1(), [three[1].name, three[0].name, three[2].name], 'order persists');
+  // unique orders: no ties left behind
+  const orders = (await tripState(page)).entries.filter((e) => e.day === 1).map((e) => e.order);
+  assert.equal(new Set(orders).size, 3);
+});
+
+await test('guide: hidden packing ideas are saved with the trip (backup, duplicate); old device-only hides are migrated', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const nat = CATALOG.destinations.find((d) => d.id === 'belgrade').places.find((p) => p.kind === 'nature');
+  await page.evaluate(({ tid, ref }) => { const st = window.__packwise.store; st.setSaved(tid, 'place', ref, true); st.state.items.filter((i) => i.tripId === tid && /shoe|bottle/i.test(i.name)).forEach((i) => st.deleteItem(i.id)); }, { tid: id, ref: `belgrade/${nat.id}` });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.hint:has-text("Refillable water bottle")');
+  await page.click('button[aria-label="Hide suggestion: Refillable water bottle"]');
+  await page.waitForFunction(() => window.__packwise.store.state.trips[0].hiddenHints.includes('water-bottle'));
+  // backup round trip keeps it hidden
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  assert.deepEqual(JSON.parse(json).data.trips[0].hiddenHints, ['water-bottle']);
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.trips.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.trips.length === 1);
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.pack-hints');
+  assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Refillable water bottle'), 'still hidden after restore');
+  await page.click('button:has-text("Show 1 hidden")');
+  await page.waitForSelector('.hint:has-text("Refillable water bottle")');
+  assert.deepEqual((await tripState(page)).trips[0].hiddenHints, []);
+  // legacy: a hide stored in device preferences by the previous build moves onto the trip
+  await page.evaluate((tid) => { const raw = JSON.parse(localStorage.getItem('packwise.prefs.v1') || '{}'); raw.dismissed = [...(raw.dismissed || []), `hint:${tid}:footwear`]; localStorage.setItem('packwise.prefs.v1', JSON.stringify(raw)); }, id);
+  await page.reload();
+  await page.waitForSelector('.pack-hints');
+  await page.waitForFunction(() => window.__packwise.store.state.trips[0].hiddenHints.includes('footwear'));
+  assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Comfortable walking shoes'));
+});
+
+
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   const listed = new Set([...sw.matchAll(/^\s+'([^']+)',$/gm)].map((m) => m[1]));

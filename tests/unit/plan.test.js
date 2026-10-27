@@ -142,3 +142,52 @@ test('guideMessage: empty, hints, draft prompt, dismissible', () => {
   assert.match(guideMessage({ saved: 2, planned: 0, hints: 2, tripId: 't', dismissed: [h.id] }).text, /draft day plan/);
   assert.equal(guideMessage({ saved: 2, planned: 1, hints: 0, tripId: 't' }), null);
 });
+
+import { guideFilename, guideModel, guideToText } from '../../js/plan.js';
+import { parseBackup } from '../../js/validate.js';
+
+test('guide text export: by day when planned, by interest otherwise, honest footer, no invented specifics', async () => {
+  const { s, t } = await fresh();
+  s.setSaved(t.id, 'place', ref(belgrade.places[0]), true);
+  s.setSaved(t.id, 'food', 'cevapi', true);
+  s.setNote(t.id, 'food', 'cevapi', 'with\nonion');
+  s.setTried(t.id, 'food', 'cevapi', true);
+  const trip = s.state.trips.find((x) => x.id === t.id);
+  let txt = guideToText(guideModel(trip, rowsOf(s, t), 4));
+  assert.match(txt, /^PackWise — Belgrade — trip guide/);
+  assert.match(txt, /FREE TO EXPLORE|CHECK ADMISSION FIRST|WORTH THE TICKET|HIDDEN GEMS/);
+  assert.match(txt, /\[x\] Ćevapi \(Street Food & Snacks\) \[Food & drink\] — with onion/);
+  assert.doesNotMatch(txt, /\bDay \d/);
+  s.planEntry(t.id, 'place', ref(belgrade.places[0]), 2);
+  txt = guideToText(guideModel(trip, rowsOf(s, t), 4));
+  assert.match(txt, /\nDAY 2\n/);
+  assert.match(txt, /NOT YET PLANNED/);
+  assert.match(txt, /no times, routes or durations/);
+  assert.match(txt, /Prices, opening hours and travel times are not included/);
+  assert.doesNotMatch(txt, /[€$£]\s?\d|\b\d{1,2}:\d{2}\b/);
+  assert.equal(guideFilename({ name: 'Zagreb — May 2027!' }), 'packwise-guide-zagreb-may-2027.txt');
+  assert.equal(guideToText(guideModel(trip, [], 3)).includes('undefined'), false);
+});
+
+test('hidden packing ideas live on the trip: validated, in backups, copied by duplicate, resettable', async () => {
+  const { s, t } = await fresh();
+  s.setHintHidden(t.id, 'footwear', true);
+  s.setHintHidden(t.id, 'footwear', true);
+  s.setHintHidden(t.id, 'water-bottle', true);
+  assert.deepEqual(s.state.trips[0].hiddenHints, ['footwear', 'water-bottle']);
+  const backup = s.exportData();
+  assert.deepEqual(backup.data.trips[0].hiddenHints, ['footwear', 'water-bottle']);
+  assert.deepEqual(parseBackup(JSON.stringify(backup)).data.trips[0].hiddenHints, ['footwear', 'water-bottle']);
+  const copy = s.duplicateTrip(t.id);
+  assert.deepEqual(copy.hiddenHints, ['footwear', 'water-bottle']);
+  s.setHintHidden(t.id, 'footwear', false);
+  assert.deepEqual(s.state.trips.find((x) => x.id === t.id).hiddenHints, ['water-bottle']);
+  s.resetHints(t.id);
+  assert.deepEqual(s.state.trips.find((x) => x.id === t.id).hiddenHints, []);
+  // junk from an old or hostile backup is dropped
+  const dirty = JSON.parse(JSON.stringify(backup));
+  dirty.data.trips[0].hiddenHints = ['ok-id', '<script>', 5, 'x'.repeat(99), 'ok-id'];
+  assert.deepEqual(parseBackup(JSON.stringify(dirty)).data.trips[0].hiddenHints, ['ok-id']);
+  // trips from before this field existed load with an empty list
+  assert.deepEqual(parseBackup(JSON.stringify({ ...backup, data: { ...backup.data, trips: backup.data.trips.map(({ hiddenHints, ...rest }) => rest) } })).data.trips[0].hiddenHints, []);
+});

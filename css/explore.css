@@ -352,6 +352,19 @@
 }
 
 /* ===================== My Trip Guide ===================== */
+.guide-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+}
+
+.move-btns .drag-handle {
+  width: 32px;
+  height: 36px;
+  margin-left: 0;
+}
+
 .plan-actions {
   display: flex;
   flex-wrap: wrap;

@@ -62,7 +62,8 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Packing hints are pure suggestions with `have` (already covered by an item name regex) and `add` (null for reminders). They never write; the only write is the explicit button (undoable). Dismissals are stored in prefs as `hint:<tripId>:<id>`; they are not part of backups.
 - Entry points: guide tabs, checklist menu, trips action sheet, summary.
 - Tests: unit `tests/unit/plan.test.js`; e2e 6 `guide:` checks (+ guide in a11y/overflow/dark sweeps).
-- Known gaps: no export of the guide as text/print; hint dismissals are device-local; day plan cannot hold a place twice; no drag-and-drop (buttons + select by design, for keyboard/screen readers).
+- Phase 5.1 follow-up: guide export (copy / `.txt` / print route `/trip/:id/guide/print`, `guideModel` + `guideToText` in `plan.js`), pointer drag reorder within a day (buttons, select and Alt+Arrow remain the keyboard path), hidden packing ideas stored on the trip (`trip.hiddenHints`, travels with backups and duplicates; old prefs-based hides are migrated on first visit), `scripts/verify-catalog.mjs` (dev-only Wikipedia/Wikidata cross-check that prints a report and never edits the catalog; unit-tested with a fake `fetch`, NOT run against the live services because the sandbox blocks them).
+- Known gaps: one place sits on one day only (a second visit needs a second entry; deliberate, a multi-day model would need schema v3 for little value); catalog data still unverified and no coordinates/photos/hours until network access allows running the verifier.
 
 ## Discovery plan, Phase 4: Taste the Destination (v1.4.0)
 
