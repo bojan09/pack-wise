@@ -131,7 +131,7 @@ export function TasteScreen(ctx) {
           guideTabs(tripId, 'taste'),
           tip,
           conflict ? h('div', { class: 'banner banner-warn' }, icon('alert', { size: 18 }), h('span', { text: `Your trip says “${asked}”, but the guide covers ${conflict.destination.name}, ${conflict.destination.country}. These are different places, so nothing is shown automatically. Pick a country below.` })) : null,
-          emptyState({ title: `No food guide for “${asked}” yet`, text: 'PackWise only lists specialities it has reviewed, and it does not make guesses. These countries are covered today:' }),
+          emptyState({ title: `No built-in food guide for “${asked}” yet`, text: 'PackWise only lists specialities it has reviewed, so this destination is not covered yet. These countries are covered today:' }),
           coveredCountries(),
           disclaimer(),
         );

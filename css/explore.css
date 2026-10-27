@@ -503,3 +503,28 @@
     justify-content: space-between;
   }
 }
+
+/* unsupported destination: plan it yourself */
+.own-places {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.search-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.search-row strong {
+  flex: 1 1 100%;
+  text-transform: capitalize;
+}

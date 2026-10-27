@@ -12,6 +12,37 @@ export const ACCENTS = [
   { id: 'pink', label: 'Pink', accent: '#E8749F', strong: '#B03A69' },
 ];
 
+export const LIGHT_BACKGROUNDS = [
+  { id: 'default', label: 'Cream', swatch: '#f8f5ef' },
+  { id: 'sage', label: 'Sage', swatch: '#eef3ea' },
+  { id: 'mist', label: 'Mist blue', swatch: '#eef3f8' },
+  { id: 'blush', label: 'Blush', swatch: '#faf1f0' },
+  { id: 'lavender', label: 'Lavender', swatch: '#f3f0f9' },
+  { id: 'sand', label: 'Warm sand', swatch: '#f7f0e2' },
+  { id: 'white', label: 'Paper white', swatch: '#fbfbfa' },
+];
+
+export const DARK_BACKGROUNDS = [
+  { id: 'default', label: 'Ocean', swatch: '#0e1f21' },
+  { id: 'midnight', label: 'Midnight', swatch: '#0d1424' },
+  { id: 'forest', label: 'Forest', swatch: '#0e1a12' },
+  { id: 'graphite', label: 'Graphite', swatch: '#131415' },
+  { id: 'plum', label: 'Plum', swatch: '#1a1020' },
+  { id: 'espresso', label: 'Espresso', swatch: '#1a1410' },
+];
+
+/** Countries the destination guide covers; a test keeps this in step with the catalog. */
+export const HOME_COUNTRIES = [
+  { id: 'RS', label: 'Serbia' },
+  { id: 'MK', label: 'North Macedonia' },
+  { id: 'BA', label: 'Bosnia and Herzegovina' },
+  { id: 'HR', label: 'Croatia' },
+  { id: 'SI', label: 'Slovenia' },
+  { id: 'ME', label: 'Montenegro' },
+  { id: 'AL', label: 'Albania' },
+  { id: 'BG', label: 'Bulgaria' },
+];
+
 export const BACKGROUNDS = [
   { id: 'default', label: 'Default' },
   { id: 'mountains', label: 'Mountains' },
@@ -20,7 +51,7 @@ export const BACKGROUNDS = [
   { id: 'minimal', label: 'Minimal' },
 ];
 
-const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [], background: 'default', haptics: false };
+const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [], background: 'default', bgLight: 'default', bgDark: 'default', homeCountry: '', haptics: false };
 export const MOTION_LEVELS = [
   { id: 'reduced', label: 'Reduced' },
   { id: 'standard', label: 'Standard' },
@@ -41,6 +72,8 @@ function read() {
   }
 }
 
+export const loadPrefsFrom = (p) => sanitize(p);
+
 function sanitize(p) {
   const out = { ...DEFAULTS };
   if (['light', 'dark', 'system'].includes(p?.theme)) out.theme = p.theme;
@@ -51,6 +84,9 @@ function sanitize(p) {
   out.companion = p?.companion !== false;
   out.haptics = p?.haptics === true;
   if (BACKGROUNDS.some((b) => b.id === p?.background)) out.background = p.background;
+  if (HOME_COUNTRIES.some((c) => c.id === p?.homeCountry)) out.homeCountry = p.homeCountry;
+  if (LIGHT_BACKGROUNDS.some((b) => b.id === p?.bgLight)) out.bgLight = p.bgLight;
+  if (DARK_BACKGROUNDS.some((b) => b.id === p?.bgDark)) out.bgDark = p.bgDark;
   if (MOTION_LEVELS.some((m) => m.id === p?.motion)) out.motion = p.motion;
   if (Array.isArray(p?.dismissed)) out.dismissed = p.dismissed.filter((x) => typeof x === 'string').map((x) => x.slice(0, 100)).slice(-200);
   return out;
@@ -93,11 +129,14 @@ export function applyPrefs(prefs = getPrefs()) {
   const root = document.documentElement;
   root.setAttribute('data-motion', effectiveMotion(prefs));
   root.setAttribute('data-bg', prefs.background);
+  root.setAttribute('data-bgl', prefs.bgLight);
+  root.setAttribute('data-bgd', prefs.bgDark);
   if (prefs.theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', prefs.theme);
   const accent = ACCENTS.find((a) => a.id === prefs.accent) || ACCENTS[0];
   root.style.setProperty('--accent', accent.accent);
   root.style.setProperty('--accent-strong', accent.strong);
   const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0E1F21' : '#F8F5EF');
+  const pick = dark ? DARK_BACKGROUNDS.find((b) => b.id === prefs.bgDark) : LIGHT_BACKGROUNDS.find((b) => b.id === prefs.bgLight);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', pick?.swatch || (dark ? '#0E1F21' : '#F8F5EF'));
 }

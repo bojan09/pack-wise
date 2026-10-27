@@ -37,6 +37,10 @@ export function resolveGuide(entries, { catalog = CATALOG, food = FOOD } = {}) {
         const sec = sectionOf(hit.place);
         rows.push({ key: `place:${entry.refId}`, entry, kind: 'place', title: hit.place.name, sub: `${hit.place.area} · ${hit.dest.name}`, group: sec, groupLabel: SECTION_LABEL[sec] || sec, missing: false, place: hit.place, dest: hit.dest });
       } else rows.push({ key: `place:${entry.refId}`, entry, kind: 'place', title: entry.refId, sub: 'No longer in the guide', group: 'missing', groupLabel: 'No longer in the guide', missing: true });
+    } else if (entry.kind === 'custom') {
+      // a place the user wrote themselves; admission is unknown (null) so it never claims to be free or ticketed
+      const place = { id: entry.refId, name: entry.label, area: entry.sub || 'My own place', kind: entry.type, admission: null, setting: OUTDOOR_TYPES.includes(entry.type) ? 'outdoor' : 'both' };
+      rows.push({ key: `custom:${entry.refId}`, entry, kind: 'custom', title: entry.label, sub: entry.sub || 'My own place', group: 'mine', groupLabel: 'My own places', missing: false, place });
     } else if (entry.kind === 'food') {
       const dish = food.items.find((i) => i.id === entry.refId);
       if (dish) rows.push({ key: `food:${entry.refId}`, entry, kind: 'food', title: dish.name, sub: FOOD_CAT[dish.category]?.label || '', group: `food-${dish.category}`, groupLabel: FOOD_CAT[dish.category]?.label || 'Food', missing: false, dish });
@@ -46,8 +50,9 @@ export function resolveGuide(entries, { catalog = CATALOG, food = FOOD } = {}) {
   return rows;
 }
 
+const OUTDOOR_TYPES = ['park', 'viewpoint', 'water', 'nature', 'street', 'history'];
 const SECTION_LABEL = { free: 'Free to Explore', ticket: 'Worth the Ticket', check: 'Check Admission First', gems: 'Hidden Gems', nature: 'Nature & Outdoors' };
-export const GROUP_ORDER = ['free', 'ticket', 'check', 'gems', 'nature', 'food-dish', 'food-street', 'food-dessert', 'food-drink', 'missing'];
+export const GROUP_ORDER = ['free', 'ticket', 'check', 'gems', 'nature', 'mine', 'food-dish', 'food-street', 'food-dessert', 'food-drink', 'missing'];
 
 const byOrder = (a, b) => a.entry.order - b.entry.order || a.entry.createdAt.localeCompare(b.entry.createdAt) || a.key.localeCompare(b.key);
 
@@ -71,7 +76,7 @@ export const planned = (rows) => rows.filter((r) => r.entry.day).length;
  */
 export function draftPlan(rows, days) {
   const todo = rows.filter((r) => !r.entry.day && !r.missing);
-  const places = todo.filter((r) => r.kind === 'place').sort((a, b) => (a.place.area || '').localeCompare(b.place.area || '') || a.title.localeCompare(b.title));
+  const places = todo.filter((r) => r.kind !== 'food').sort((a, b) => (a.place.area || '').localeCompare(b.place.area || '') || a.title.localeCompare(b.title));
   const dishes = todo.filter((r) => r.kind === 'food').sort(byOrder);
   const slots = Math.max(1, days);
   const perDay = Math.max(1, Math.min(PER_DAY, Math.ceil(places.length / slots)));
@@ -97,7 +102,7 @@ const norm = (s) => String(s || '').toLowerCase();
  * @returns {{id:string, title:string, why:string, add:null|{name:string, category:string}, have:boolean}[]}
  */
 export function packHints(rows, items) {
-  const places = rows.filter((r) => r.kind === 'place' && !r.missing);
+  const places = rows.filter((r) => (r.kind === 'place' || r.kind === 'custom') && !r.missing && r.place);
   const names = (list) => list.slice(0, 3).map((r) => r.title).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
   const owned = items.map((i) => norm(i.name));
   const has = (re) => owned.some((n) => re.test(n));
@@ -112,9 +117,9 @@ export function packHints(rows, items) {
   if (water.length) defs.push({ id: 'swim', title: 'Swimwear (if you plan to swim)', why: `You saved waterfront places: ${names(water)}.`, add: { name: 'Swimwear', category: 'clothing' }, have: has(/swim|bikini|trunks|bathing/) });
   const sacred = places.filter((r) => r.place.kind === 'religious');
   if (sacred.length) defs.push({ id: 'modest', title: 'Something to cover shoulders and knees', why: `Some sacred sites ask for modest dress: ${names(sacred)}. Check each site’s rules.`, add: { name: 'Light scarf or cover-up', category: 'clothing' }, have: has(/scarf|shawl|cover|sarong/) });
-  const gated = places.filter((r) => r.place.admission !== 'free');
+  const gated = places.filter((r) => r.kind === 'place' && r.place.admission !== 'free');
   if (gated.length) defs.push({ id: 'entry', title: `Check entry rules for ${gated.length} ${gated.length === 1 ? 'place' : 'places'}`, why: `Admission, opening times and ID or ticket rules can change: ${names(gated)}. PackWise does not list them.`, add: null, have: false });
-  const outdoors = places.filter((r) => r.place.setting !== 'indoor');
+  const outdoors = places.filter((r) => r.place.setting === 'outdoor' || (r.kind === 'place' && r.place.setting !== 'indoor'));
   if (outdoors.length >= 3) defs.push({ id: 'sun', title: 'Sun protection', why: `${outdoors.length} saved places are outdoors or partly outdoors. Check the forecast near your dates.`, add: { name: 'Sunscreen', category: 'toiletries' }, have: has(/sun ?screen|sun ?block|spf|sun hat|\bhat\b|cap\b/) });
   return defs;
 }
@@ -129,7 +134,7 @@ export function guideModel(trip, rows, days) {
   const line = (r) => ({
     title: r.title,
     sub: r.sub,
-    tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : '',
+    tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : r.kind === 'custom' ? 'My place' : '',
     tried: r.kind === 'food' ? Boolean(r.entry.tried) : null,
     note: (r.entry.note || '').replace(/\s*\n\s*/g, ' '),
     missing: r.missing,

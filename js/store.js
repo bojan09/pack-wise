@@ -8,6 +8,7 @@ import {
   makeBag,
   makeEntry,
   entryId,
+  customRef,
   makeItem,
   makeTask,
   makeTemplate,
@@ -149,8 +150,8 @@ export function createStore(adapter) {
       tasks = tripTasks(state, source.id).map((t, order) => makeTask({ ...t, order, tripId: trip.id, done: false }));
     } else {
       if (templateItems) seeds = templateItems;
-      else if (generate) seeds = generatePackingList({ type: trip.type, days, travelers: trip.travelers, bagKinds: kinds, season: trip.season, conditions: trip.conditions });
-      if (withTasks) tasks = generateTasks({ transport: trip.transport }).map((g, order) => makeTask({ ...g, order, tripId: trip.id }));
+      else if (generate) seeds = generatePackingList({ type: trip.type, days, travelers: trip.travelers, bagKinds: kinds, season: trip.season, conditions: trip.conditions, scope: trip.scope });
+      if (withTasks) tasks = generateTasks({ transport: trip.transport, scope: trip.scope }).map((g, order) => makeTask({ ...g, order, tripId: trip.id }));
     }
     const items = seeds
       .map((g, order) => makeItem({ category: g.category, name: g.name, target: g.target, essential: g.essential, priority: g.priority, notes: g.notes, order, tripId: trip.id, bagId: bagForCategory(normalizeCategoryOf(g), bags), packed: 0 }))
@@ -511,6 +512,7 @@ export function createStore(adapter) {
     const cur = find('entries', id);
     if (!saved) {
       if (!cur) return false;
+      if (cur.kind === 'custom') { commit({ remove: { entries: [id] } }); return false; } // nothing else worth keeping
       // keep the record only if it still carries something else the user wrote or ticked
       if (cur.tried || cur.note) commit({ put: { entries: [{ ...touch(cur), saved: false, day: null }] } });
       else commit({ remove: { entries: [id] } });
@@ -540,6 +542,53 @@ export function createStore(adapter) {
   }
   const setTried = (tripId, kind, refId, tried) => patchEntry(tripId, kind, refId, { tried: tried === true });
   const setNote = (tripId, kind, refId, note) => patchEntry(tripId, kind, refId, { note: String(note ?? '').trim() });
+
+  // ---- user-written places (kind 'custom'): for destinations the built-in guide does not cover
+  const nextOrder_ = (tripId) => state.entries.filter((e) => e.tripId === tripId).length;
+
+  /** Add (or update, if the same name exists) a place the user wrote themselves. */
+  function addCustomPlace(tripId, { label, sub = '', type = '', note = '' } = {}) {
+    if (!find('trips', tripId)) return null;
+    const name = String(label ?? '').trim();
+    if (!name) return null;
+    const refId = customRef(name);
+    const cur = find('entries', entryId(tripId, 'custom', refId));
+    const next = normalizeEntry({ ...(cur ? touch(cur) : { tripId, kind: 'custom', refId, order: nextOrder_(tripId), createdAt: nowIso() }), tripId, kind: 'custom', refId, label: name, sub, type, note, saved: true });
+    if (!next) return null;
+    commit({ put: { entries: [next] } });
+    return next;
+  }
+
+  /** Rename / retype a custom place, keeping its day and order. Returns the new entry. */
+  function editCustomPlace(tripId, oldRef, fields) {
+    const cur = find('entries', entryId(tripId, 'custom', oldRef));
+    if (!cur) return null;
+    const name = String(fields.label ?? cur.label).trim();
+    if (!name) return null;
+    const refId = customRef(name);
+    const clash = refId !== oldRef && find('entries', entryId(tripId, 'custom', refId));
+    if (clash) return null; // another place already has that name
+    const next = normalizeEntry({ ...touch(cur), refId, label: name, sub: fields.sub ?? cur.sub, type: fields.type ?? cur.type, note: fields.note ?? cur.note, saved: true });
+    if (!next) return null;
+    commit({ remove: refId === oldRef ? {} : { entries: [cur.id] }, put: { entries: [next] } });
+    return next;
+  }
+
+  /** Remove an entry outright and return it, so the caller can offer Undo with restoreEntry. */
+  function removeEntry(tripId, kind, refId) {
+    const cur = find('entries', entryId(tripId, kind, refId));
+    if (!cur) return null;
+    commit({ remove: { entries: [cur.id] } });
+    return cur;
+  }
+
+  function restoreEntry(entry) {
+    if (!entry || !find('trips', entry.tripId) || find('entries', entry.id)) return null;
+    const norm = normalizeEntry(entry);
+    if (!norm) return null;
+    commit({ put: { entries: [norm] } });
+    return norm;
+  }
 
   // ---- day plan (manual): `day` 1..60 or null (unplanned), `order` within the day
   const savedEntry = (tripId, kind, refId) => { const e = find('entries', entryId(tripId, kind, refId)); return e?.saved ? e : null; };
@@ -671,6 +720,10 @@ export function createStore(adapter) {
     deleteTemplate,
     saveTripAsTemplate,
     setSaved,
+    addCustomPlace,
+    editCustomPlace,
+    removeEntry,
+    restoreEntry,
     setTried,
     setHintHidden,
     resetHints,

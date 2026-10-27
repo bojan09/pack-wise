@@ -24,6 +24,12 @@ const MIGRATIONS = [
     to: 2,
     up: (data) => ({ ...data, entries: Array.isArray(data.entries) ? data.entries : [] }),
   },
+  {
+    // v2 -> v3: entries may be user-written (kind 'custom'). Nothing to rewrite: existing entries keep working.
+    from: 2,
+    to: 3,
+    up: (data) => data,
+  },
 ];
 
 /**

@@ -57,6 +57,14 @@ Diet and allergen tags describe a typical recipe, not a safety guarantee. See `d
 
 The guide switch has a third tab, **My Guide**: everything saved from Places and Taste, arranged **by interest** or **by day**. Pick a day for any item (one slot per trip day, or 3 if the trip has no dates) and reorder within a day with the arrow buttons. *Suggest a draft plan* fills only the unplanned items, keeps places with the same area name together and is fully undoable; day plans have **no times, routes or travel durations** because PackWise has no verified ones. *Packing ideas* (walking shoes and water for trails, swimwear for waterfront places, a cover-up for sacred sites, "check entry rules" for ticketed places) are optional, skip anything already on the packing list, and never change it unless you tap *Add to packing list*. Drag the grip to reorder within a day. **Copy as text**, **Save as .txt** and **Print** export the guide. Everything works offline, is included in backups (including hidden packing ideas) and is copied when you duplicate a trip.
 
+## Added in v1.6.0: item pictures, category colors, trip scope, background colors, own places
+
+- **Item pictures:** the Packing Studio tray, case and tiles show a small illustration of the item itself (T-shirt, toothbrush, passport, tent…), about 90 distinct drawings; custom items fall back to a per-category glyph.
+- **Category colors:** every packing category has its own hue in the checklist, the Studio chips, tiles and tray, in light and dark.
+- **Trip scope:** *Where to? Within my country / Abroad*. Domestic trips skip passport, insurance, bank-notice and adapter reminders. Set a **Home country** in Settings and PackWise suggests the right choice from the destination. The Travel Tasks page offers to remove abroad-only tasks from a domestic trip (undoable).
+- **Background colors:** Settings → Appearance has separate color choices for light mode (7) and dark mode (6); each applies only in its own mode, also when the theme is "System".
+- **Destinations without a built-in guide** (for example a small town or a trail) now get a *Plan it yourself* page: add **your own places** (name, type, area, note), which appear in My Guide with days, packing ideas and exports, plus search links for each stop. PackWise still shows no invented data for them.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

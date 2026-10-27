@@ -114,3 +114,82 @@
     --gutter: 32px;
   }
 }
+
+/* ---- user-selectable background colors: one set for light, one for dark (see prefs.js) ---- */
+:root[data-theme='light'][data-bgl='sage'] { --bg: #eef3ea; --bg-sky: #efefef; --surface-2: #efefef; --surface-3: #efefef; --line: #d3dccb; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='sage'] { --bg: #eef3ea; --bg-sky: #efefef; --surface-2: #efefef; --surface-3: #efefef; --line: #d3dccb; } }
+:root[data-theme='light'][data-bgl='mist'] { --bg: #eef3f8; --bg-sky: #efeff3; --surface-2: #efeff5; --surface-3: #efefef; --line: #d0dce8; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='mist'] { --bg: #eef3f8; --bg-sky: #efeff3; --surface-2: #efeff5; --surface-3: #efefef; --line: #d0dce8; } }
+:root[data-theme='light'][data-bgl='blush'] { --bg: #faf1f0; --bg-sky: #f5efef; --surface-2: #f4efef; --surface-3: #efefef; --line: #e8d6d2; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='blush'] { --bg: #faf1f0; --bg-sky: #f5efef; --surface-2: #f4efef; --surface-3: #efefef; --line: #e8d6d2; } }
+:root[data-theme='light'][data-bgl='lavender'] { --bg: #f3f0f9; --bg-sky: #efeff3; --surface-2: #efeff4; --surface-3: #efefef; --line: #d9d3e8; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='lavender'] { --bg: #f3f0f9; --bg-sky: #efeff3; --surface-2: #efeff4; --surface-3: #efefef; --line: #d9d3e8; } }
+:root[data-theme='light'][data-bgl='sand'] { --bg: #f7f0e2; --bg-sky: #efefef; --surface-2: #f0efef; --surface-3: #efefef; --line: #e2d4b8; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='sand'] { --bg: #f7f0e2; --bg-sky: #efefef; --surface-2: #f0efef; --surface-3: #efefef; --line: #e2d4b8; } }
+:root[data-theme='light'][data-bgl='white'] { --bg: #fbfbfa; --bg-sky: #eef2f2; --surface-2: #f2f2f0; --surface-3: #efefef; --line: #e3e3df; }
+@media (prefers-color-scheme: light) { :root:not([data-theme])[data-bgl='white'] { --bg: #fbfbfa; --bg-sky: #eef2f2; --surface-2: #f2f2f0; --surface-3: #efefef; --line: #e3e3df; } }
+:root[data-theme='dark'][data-bgd='midnight'] { --bg: #0d1424; --bg-sky: #142038; --surface: #151e33; --surface-2: #1c2842; --surface-3: #26345a; --line: #2b3a5e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme])[data-bgd='midnight'] { --bg: #0d1424; --bg-sky: #142038; --surface: #151e33; --surface-2: #1c2842; --surface-3: #26345a; --line: #2b3a5e; } }
+:root[data-theme='dark'][data-bgd='forest'] { --bg: #0e1a12; --bg-sky: #142a1d; --surface: #15251a; --surface-2: #1c3224; --surface-3: #25432f; --line: #2a4a35; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme])[data-bgd='forest'] { --bg: #0e1a12; --bg-sky: #142a1d; --surface: #15251a; --surface-2: #1c3224; --surface-3: #25432f; --line: #2a4a35; } }
+:root[data-theme='dark'][data-bgd='graphite'] { --bg: #131415; --bg-sky: #1b1d1f; --surface: #1b1d1f; --surface-2: #232628; --surface-3: #2d3134; --line: #34383c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme])[data-bgd='graphite'] { --bg: #131415; --bg-sky: #1b1d1f; --surface: #1b1d1f; --surface-2: #232628; --surface-3: #2d3134; --line: #34383c; } }
+:root[data-theme='dark'][data-bgd='plum'] { --bg: #1a1020; --bg-sky: #26172f; --surface: #221529; --surface-2: #2c1c35; --surface-3: #3a2646; --line: #43294f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme])[data-bgd='plum'] { --bg: #1a1020; --bg-sky: #26172f; --surface: #221529; --surface-2: #2c1c35; --surface-3: #3a2646; --line: #43294f; } }
+:root[data-theme='dark'][data-bgd='espresso'] { --bg: #1a1410; --bg-sky: #271d16; --surface: #231b15; --surface-2: #2d231b; --surface-3: #3a2e24; --line: #43352a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme])[data-bgd='espresso'] { --bg: #1a1410; --bg-sky: #271d16; --surface: #231b15; --surface-2: #2d231b; --surface-3: #3a2e24; --line: #43352a; } }
+
+/* ---- category colors: every packing category has its own hue (checklist, studio chips, tray, case) ---- */
+[data-cat='clothing'] { --cat: #4f7cc4; --cat-strong: #2f5594; --cat-pale: #c9daf3; }
+[data-cat='toiletries'] { --cat: #9a7fd1; --cat-strong: #5f45a3; --cat-pale: #e2d9f4; }
+[data-cat='electronics'] { --cat: #e0a63a; --cat-strong: #8f5f0a; --cat-pale: #f8e6bd; }
+[data-cat='documents'] { --cat: #e8765c; --cat-strong: #a63f29; --cat-pale: #fbd8ce; }
+[data-cat='essentials'] { --cat: #d9527a; --cat-strong: #a02a52; --cat-pale: #f6cdda; }
+[data-cat='camping'] { --cat: #5baa5f; --cat-strong: #2d7132; --cat-pale: #cfeacf; }
+[data-cat='misc'] { --cat: #3aa3b5; --cat-strong: #1a6b7d; --cat-pale: #c5e8ee; }
+
+[data-cat] {
+  --cat-soft: color-mix(in srgb, var(--cat) 16%, var(--surface));
+  --cat-ink: var(--cat-strong);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [data-cat] {
+    --cat-soft: color-mix(in srgb, var(--cat) 26%, var(--surface));
+    --cat-ink: color-mix(in srgb, var(--cat) 62%, #fff);
+  }
+}
+
+:root[data-theme='dark'] [data-cat] {
+  --cat-soft: color-mix(in srgb, var(--cat) 26%, var(--surface));
+  --cat-ink: color-mix(in srgb, var(--cat) 62%, #fff);
+}
+
+/* ---- item illustrations (js/ui/itemart.js) ---- */
+.item-art .a-f1 { fill: var(--cat); }
+.item-art .a-f2 { fill: var(--cat-strong); }
+.item-art .a-f3 { fill: var(--cat-pale); }
+.item-art .a-fw { fill: #fff; }
+.item-art .a-fi { fill: #123d40; }
+.item-art .a-fa { fill: #e7b66c; }
+.item-art .a-fr { fill: #d9534a; }
+.item-art .a-fb { fill: #5aa9e6; }
+.item-art [class$='k'] { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.item-art .a-f1k { stroke: var(--cat); }
+.item-art .a-f2k { stroke: var(--cat-strong); }
+.item-art .a-f3k { stroke: var(--cat-pale); }
+.item-art .a-fwk { stroke: #fff; }
+.item-art .a-fak { stroke: #e7b66c; }
+.item-art .a-frk { stroke: #d9534a; stroke-width: 3; }
+.item-art .a-fkk { stroke: #123d40; }
+.item-art path:not([class$='k']),
+.item-art rect:not([class$='k']),
+.item-art circle:not([class$='k']),
+.item-art ellipse:not([class$='k']) { stroke: rgb(18 61 64 / 28%); stroke-width: 1; stroke-linejoin: round; }
+
+/* a faint light outline keeps dark shapes readable on dark surfaces */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .item-art { filter: drop-shadow(0 0 0.8px rgb(255 255 255 / 75%)); }
+}
+
+:root[data-theme='dark'] .item-art { filter: drop-shadow(0 0 0.8px rgb(255 255 255 / 75%)); }

@@ -3,7 +3,8 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { button, field, segmented, selectInput, tiles } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
-import { BAG_KINDS, CONDITIONS, LIMITS, SEASONS, TRANSPORTS, TRIP_TYPES, cleanDate } from '../models.js';
+import { BAG_KINDS, CONDITIONS, LIMITS, SEASONS, TRANSPORTS, TRIP_SCOPES, TRIP_TYPES, cleanDate } from '../models.js';
+import { HOME_COUNTRIES, getPrefs } from '../prefs.js';
 import { getTrip, sortedTrips } from '../selectors.js';
 import { BUILTIN_TEMPLATES, builtinTemplateItems, defaultDays } from '../templates.js';
 import { seasonForDates, tripLengthDays } from '../progress.js';
@@ -22,6 +23,8 @@ export function TripFormScreen(ctx, { mode }) {
     startDate: existing?.startDate || '',
     endDate: existing?.endDate || '',
     transport: existing?.transport ?? '',
+    scope: existing?.scope || 'abroad',
+    scopeTouched: Boolean(existing?.scope),
     travelers: existing?.travelers || 1,
     notes: existing?.notes || '',
     season: existing?.season || '',
@@ -49,7 +52,7 @@ export function TripFormScreen(ctx, { mode }) {
       const root = h('div', { class: 'screen trip-form' });
       const formEl = h('form', { class: 'form-stack', novalidate: true });
 
-      const destination = h('input', { type: 'text', name: 'destination', maxlength: LIMITS.destination, value: form.destination, placeholder: 'City, country or region', autocomplete: 'off', onInput: (e) => (form.destination = e.target.value) });
+      const destination = h('input', { type: 'text', name: 'destination', maxlength: LIMITS.destination, value: form.destination, placeholder: 'City, country or region', autocomplete: 'off', onInput: (e) => (form.destination = e.target.value), onChange: () => autoScope() });
       const start = h('input', { type: 'date', name: 'start', value: form.startDate, onChange: (e) => { form.startDate = cleanDate(e.target.value); end.min = form.startDate; autoSeason(); } });
       const end = h('input', { type: 'date', name: 'end', value: form.endDate, min: form.startDate || undefined, onChange: (e) => { form.endDate = cleanDate(e.target.value); autoSeason(); } });
       const name = h('input', { type: 'text', name: 'name', maxlength: LIMITS.name, value: form.name, placeholder: 'Defaults to the destination', onInput: (e) => (form.name = e.target.value) });
@@ -58,6 +61,21 @@ export function TripFormScreen(ctx, { mode }) {
       transport.addEventListener('change', (e) => (form.transport = e.target.value));
       const notes = h('textarea', { name: 'notes', rows: 3, maxlength: LIMITS.notes, placeholder: 'Anything to remember for this trip', onInput: (e) => (form.notes = e.target.value) }, form.notes);
       const seasonHint = h('p', { class: 'muted small', 'aria-live': 'polite' });
+      const scopeHint = h('p', { class: 'muted small', 'aria-live': 'polite' });
+
+      /** With a home country set in Settings, a destination inside it suggests a domestic trip (the user can still override). */
+      async function autoScope() {
+        const home = getPrefs().homeCountry;
+        if (!home || form.scopeTouched || !form.destination.trim()) return;
+        const [{ matchDestination }, { CATALOG }] = await Promise.all([import('../guide.js'), import('../data/catalog.js')]);
+        const m = matchDestination(form.destination, CATALOG);
+        const inHome = (m.matches.length && m.matches.every((d) => d.countryCode === home)) || (!m.matches.length && m.countryOnly.length && m.countryOnly.every((c) => c.id === home));
+        const abroad = m.matches.some((d) => d.countryCode !== home) || m.countryOnly.some((c) => c.id !== home);
+        if (form.scopeTouched || (!inHome && !abroad)) return;
+        form.scope = inHome ? 'domestic' : 'abroad';
+        formEl.querySelectorAll('input[name=scope]').forEach((i) => { i.checked = i.value === form.scope; });
+        scopeHint.textContent = `Set from your home country (${HOME_COUNTRIES.find((c) => c.id === home)?.label}). Change it if you like.`;
+      }
       const errorBox = h('div', { class: 'form-errors', role: 'alert' });
 
       function submit(e) {
@@ -74,7 +92,7 @@ export function TripFormScreen(ctx, { mode }) {
           problems[0].el.focus();
           return;
         }
-        const fields = { name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, travelers: form.travelers, season: form.season, conditions: form.conditions, notes: form.notes };
+        const fields = { name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, scope: form.scope, travelers: form.travelers, season: form.season, conditions: form.conditions, notes: form.notes };
         if (editing) {
           store.updateTrip(existing.id, fields);
           toast('Trip updated', { tone: 'success' });
@@ -85,7 +103,7 @@ export function TripFormScreen(ctx, { mode }) {
           if (form.startFrom === 'template') {
             const builtin = BUILTIN_TEMPLATES.find((t) => t.id === form.templateId);
             const custom = customTemplates.find((t) => t.id === form.templateId);
-            if (builtin) opts.templateItems = builtinTemplateItems(builtin.id, { days: days || builtin.days, travelers: form.travelers, bagKinds: form.bagKinds, season: form.season, conditions: form.conditions });
+            if (builtin) opts.templateItems = builtinTemplateItems(builtin.id, { days: days || builtin.days, travelers: form.travelers, bagKinds: form.bagKinds, season: form.season, conditions: form.conditions, scope: form.scope });
             else if (custom) opts.templateItems = custom.items;
             else { errorBox.replaceChildren(h('p', { class: 'field-error', text: 'Choose a template.' })); return; }
           } else if (form.startFrom === 'copy') {
@@ -159,7 +177,7 @@ export function TripFormScreen(ctx, { mode }) {
 
       formEl.append(
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '1' }), 'Trip type'), tiles({ name: 'type', label: 'Trip type', options: TRIP_TYPES, value: form.type, className: 'tiles-types', onChange: (v) => { form.type = v; if (v === 'camping' && !editing && !form.bagsTouched) setBagTiles(['backpack', 'camping']); } })),
-        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), field({ label: 'Destination', input: destination }), field({ label: 'Trip name (optional)', input: name })),
+        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), field({ label: 'Destination', input: destination }), field({ label: 'Trip name (optional)', input: name }), h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'scope-label', text: 'Where to?' }), segmented({ name: 'scope', label: 'Where to?', value: form.scope, options: TRIP_SCOPES, onChange: (v) => { form.scope = v; form.scopeTouched = true; scopeHint.textContent = ''; } }), scopeHint, h('p', { class: 'muted small', text: 'Trips within your own country skip passport, insurance, bank-notice and adapter reminders.' }))),
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '3' }), 'Dates'), h('div', { class: 'grid-2' }, field({ label: 'Departure', input: start }), field({ label: 'Return', input: end })), h('p', { class: 'muted small', text: `Dates are optional. Without them, ${defaultDays(form.type)} days are assumed for the starter list.` })),
         weatherSection(),
         editing

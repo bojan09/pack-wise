@@ -6,7 +6,7 @@ import { button, chip, iconButton, progressBar } from '../ui/components.js';
 import { companion } from '../ui/art.js';
 import { companionBubble } from '../ui/bubble.js';
 import { VIEWS, ZOOMS, createStage, tokenFace } from '../ui/suitcase.js';
-import { CATEGORY_PRESETS, BAG_KINDS, categoryMeta } from '../models.js';
+import { CATEGORY_PRESETS, BAG_KINDS, categoryKey, categoryMeta } from '../models.js';
 import { essentialsLeft, isItemPacked, sumQty } from '../progress.js';
 import { companionMessage } from '../companion.js';
 import { effectiveMotion, getPrefs } from '../prefs.js';
@@ -152,7 +152,7 @@ export function StudioScreen(ctx) {
     const present = [...new Set(bagItems.map((i) => i.category))];
     const order = [...CATEGORY_PRESETS.map((c) => c.id).filter((c) => present.includes(c)), ...present.filter((c) => !CATEGORY_PRESETS.some((p) => p.id === c)).sort()];
     if (catTab !== 'all' && !order.includes(catTab)) catTab = 'all';
-    rerender(catHost, () => h('div', { class: 'chips-inner' }, chip({ label: 'All', count: bagItems.length, active: catTab === 'all', key: 'cat-all', onClick: () => { catTab = 'all'; showAll = false; update(); } }), order.map((c) => chip({ label: categoryMeta(c).label, count: bagItems.filter((i) => i.category === c).length, active: catTab === c, key: `cat-${c}`, onClick: () => { catTab = c; showAll = false; update(); } }))));
+    rerender(catHost, () => h('div', { class: 'chips-inner' }, chip({ label: 'All', count: bagItems.length, active: catTab === 'all', key: 'cat-all', onClick: () => { catTab = 'all'; showAll = false; update(); } }), order.map((c) => chip({ label: categoryMeta(c).label, count: bagItems.filter((i) => i.category === c).length, active: catTab === c, key: `cat-${c}`, cat: categoryKey(c), onClick: () => { catTab = c; showAll = false; update(); } }))));
     const list = bagItems.filter((i) => catTab === 'all' || i.category === catTab);
     const shown = showAll ? list : list.slice(0, TILE_LIMIT);
     rerender(tilesHost, () => h(
@@ -165,7 +165,7 @@ export function StudioScreen(ctx) {
           const done = isItemPacked(i);
           return h(
             'li',
-            { class: `tile-item${done ? ' is-packed' : ''}${i.id === selectedId ? ' is-selected' : ''}` },
+            { class: `tile-item${done ? ' is-packed' : ''}${i.id === selectedId ? ' is-selected' : ''}`, 'data-cat': categoryKey(i.category) },
             h('button', { type: 'button', class: 'tile-main', 'data-key': `tile-${i.id}`, 'aria-pressed': done ? 'true' : 'false', 'aria-label': `${i.name}: ${i.packed} of ${i.target} packed. ${done ? 'Unpack' : 'Pack'}`, onClick: () => store.togglePacked(i.id) }, tokenFace(i), h('span', { class: 'tile-name', text: i.name }), h('span', { class: 'tile-qty muted', text: `${i.packed}/${i.target}` }), done ? h('span', { class: 'tile-check' }, icon('check', { size: 12 })) : null),
             h('button', { type: 'button', class: 'tile-info', 'data-key': `info-${i.id}`, 'aria-label': `Details for ${i.name}`, onClick: () => { selectedId = selectedId === i.id ? '' : i.id; update(); } }, icon('info', { size: 14 })),
           );

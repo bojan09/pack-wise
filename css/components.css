@@ -1232,3 +1232,16 @@ input[aria-invalid='true'] {
     font-size: 16px;
   }
 }
+
+/* category-colored chips (Packing Studio filters) */
+.chip[data-cat] {
+  border-color: color-mix(in srgb, var(--cat) 55%, var(--line));
+  color: var(--cat-ink);
+  background: var(--cat-soft);
+}
+
+.chip[data-cat].is-active {
+  background: var(--cat-strong);
+  border-color: var(--cat-strong);
+  color: #fff;
+}

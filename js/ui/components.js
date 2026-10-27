@@ -49,10 +49,10 @@ export function emptyState({ title, text, action, mood = 'happy', showCompanion 
   );
 }
 
-export function chip({ label, count, active, onClick, key }) {
+export function chip({ label, count, active, onClick, key, cat }) {
   return h(
     'button',
-    { type: 'button', class: `chip${active ? ' is-active' : ''}`, 'aria-pressed': active ? 'true' : 'false', onClick, 'data-key': key },
+    { type: 'button', class: `chip${active ? ' is-active' : ''}`, 'aria-pressed': active ? 'true' : 'false', onClick, 'data-key': key, 'data-cat': cat },
     label,
     count !== undefined ? h('span', { class: 'chip-count', text: String(count) }) : null,
   );
@@ -108,8 +108,8 @@ export function field({ label, input, hint, error, id }) {
   );
 }
 
-export function selectInput({ options, value, name }) {
-  return h('select', { name }, options.map((o) => h('option', { value: o.id, selected: o.id === value, text: o.label })));
+export function selectInput({ options, value, name, onChange }) {
+  return h('select', { name, onChange }, options.map((o) => h('option', { value: o.id, selected: o.id === value, text: o.label })));
 }
 
 /**

@@ -54,6 +54,16 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## v1.6.0: user feedback round (item art, category colors, scope, background colors, own places)
+
+- **Schema v3**: `entries.kind` gains `'custom'` (user-written places: `label` ≤80, `sub` ≤60, `type` ∈ `CUSTOM_TYPES`, ref = `customRef(label)`); `trips.scope` (`''|'abroad'|'domestic'`) and `trips.hiddenHints` are optional trip fields. Migration v2→v3 is a no-op (additive); an older build refuses newer data via the NEWER_DATA guard instead of dropping custom entries.
+- `js/ui/itemart.js`: data-driven SVG illustrations (`ART` = ordered `[regex, shapes]`; first match wins, so specific names come first). Classes `a-f1…` take colors from the category custom properties in `css/tokens.css` (`[data-cat]`), dark mode adds a faint outline filter. `tokenFace()` now returns that SVG. A unit test fails if any generated template item lacks its own picture, if shapes are malformed, or if a class has no CSS rule.
+- Category colors: `categoryKey()` maps custom categories to `misc`; `data-cat` on checklist cards, chips, tray tokens and tiles drives `--cat`, `--cat-strong`, `--cat-pale`, `--cat-soft`, `--cat-ink`.
+- Scope: `generatePackingList` / `generateTasks` take `scope`; `ABROAD_ONLY_TASKS` / `ABROAD_ONLY_ITEMS` in `templates.js`. Existing trips (`scope ''`) are unchanged. `prefs.homeCountry` + `HOME_COUNTRIES` (test keeps it equal to the catalog) drive a dynamic-import auto suggestion in the trip form that never overrides a manual choice.
+- Background colors: `prefs.bgLight` / `prefs.bgDark`, applied as `data-bgl` / `data-bgd` (also in `theme-boot.js` to avoid a flash). CSS has an explicit-theme rule and a `prefers-color-scheme` rule for each palette. `tests/unit/backgrounds.test.js` enforces text ≥7:1 and muted text ≥4.5:1 on every variant.
+- Own places: `customPlaceDialog` (screens/customPlace.js), store `addCustomPlace` / `editCustomPlace` / `removeEntry` / `restoreEntry`; `resolveGuide` turns them into rows with `admission: null` (never claimed free/ticketed).
+- Wording: uncovered destinations no longer say "I won't make one up"; they offer the plan-it-yourself page.
+
 ## Discovery plan, Phase 5: My Trip Guide & packing integration (v1.5.0)
 
 - `js/plan.js` (pure): `resolveGuide` (join saved entries with catalogs; entries whose item left the catalog stay, flagged `missing`), `groupByInterest`, `groupByDay`, `dayCount`, `draftPlan`, `packHints`. `js/screens/guide.js` (lazy, precached). No schema change: uses `entries.day` / `entries.order`.

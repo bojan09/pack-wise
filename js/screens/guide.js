@@ -9,6 +9,7 @@ import { toast } from '../ui/toast.js';
 import { ADMISSION, googleMapsUrl } from '../guide.js';
 import { GUIDE_FOOT, dayCount, draftPlan, groupByDay, groupByInterest, guideFilename, guideModel, guideToText, packHints, planned, resolveGuide } from '../plan.js';
 import { downloadFile } from '../backup.js';
+import { customPlaceDialog } from './customPlace.js';
 import { guideMessage } from '../companion.js';
 import { getPrefs, setPrefs } from '../prefs.js';
 import { getTrip, tripEntries, tripItems } from '../selectors.js';
@@ -32,6 +33,11 @@ export function GuideScreen(ctx) {
 
   // ------------------------------------------------------------------ actions
   function remove(row) {
+    if (row.kind === 'custom') {
+      const gone = store.removeEntry(tripId, 'custom', row.entry.refId);
+      if (gone) toast(`Removed “${row.title}”`, { action: { label: 'Undo', run: () => store.restoreEntry(gone) } });
+      return;
+    }
     const prev = { day: row.entry.day, order: row.entry.order };
     store.setSaved(tripId, row.kind, row.entry.refId, false);
     toast(`Removed “${row.title}”`, { action: { label: 'Undo', run: () => { store.setSaved(tripId, row.kind, row.entry.refId, true); store.setPlan(tripId, [{ kind: row.kind, refId: row.entry.refId, ...prev }]); } } });
@@ -106,10 +112,11 @@ export function GuideScreen(ctx) {
     return sel;
   }
 
-  function guideRow(row, { days, canMove, first, last, dayRows }) {
+  function guideRow(row, { days, canMove, first, last, dayRows, tripPlace }) {
     const tags = [];
     if (row.kind === 'place' && row.place) tags.push(h('span', { class: `tag adm-tag adm-tag-${row.place.admission}`, text: ADMISSION[row.place.admission].label }));
     if (row.kind === 'food') tags.push(h('span', { class: 'tag', text: 'Food & drink' }));
+    if (row.kind === 'custom') tags.push(h('span', { class: 'tag', text: 'My place' }));
     if (row.kind === 'food' && row.entry.tried) tags.push(h('span', { class: 'tag tag-family', text: 'Tried' }));
     return h(
       'li',
@@ -120,9 +127,11 @@ export function GuideScreen(ctx) {
         h('span', { class: 'muted small', text: row.sub }),
         tags.length ? h('div', { class: 'place-tags' }, tags) : null,
         row.entry.note ? h('span', { class: 'small guide-note', text: `Note: ${row.entry.note}` }) : null,
+        row.kind === 'custom' ? h('a', { class: 'link small', href: googleMapsUrl(row.place, { name: tripPlace, country: '' }), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` search for ${row.title} (opens in a new tab)` })) : null,
         row.kind === 'place' && row.place ? h('a', { class: 'link small', href: googleMapsUrl(row.place, row.dest), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` for ${row.title} (opens in a new tab)` })) : null),
       h('div', { class: 'guide-row-actions' },
         row.missing ? null : dayPicker(row, days),
+        row.kind === 'custom' ? iconButton({ icon: 'edit', label: `Edit ${row.title}`, key: `edit-${row.key}`, onClick: () => customPlaceDialog({ store, tripId, entry: row.entry }) }) : null,
         canMove ? h('div', { class: 'move-btns' },
           h('button', { type: 'button', class: 'drag-handle', 'data-key': `drag-${row.key}`, 'aria-label': `Reorder ${row.title}. Drag, or press Alt plus Up or Down arrow.`, title: 'Drag to reorder', onPointerdown: (e) => startDrag(e, e.currentTarget.closest('li'), e.currentTarget.closest('ul'), dayRows), onKeydown: (e) => { if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); store.moveEntry(tripId, row.kind, row.entry.refId, e.key === 'ArrowUp' ? -1 : 1); } } }, icon('grip', { size: 18 })),
           iconButton({ icon: 'arrowU', label: `Move ${row.title} earlier`, key: `up-${row.key}`, onClick: () => store.moveEntry(tripId, row.kind, row.entry.refId, -1), className: first ? 'is-dim' : '' }),
@@ -146,7 +155,7 @@ export function GuideScreen(ctx) {
       const open = hints.filter((x) => !x.have && !hidden.has(x.id));
       const covered = hints.filter((x) => x.have).length;
       const hiddenCount = hints.filter((x) => !x.have && hidden.has(x.id)).length;
-      const placeN = rows.filter((r) => r.kind === 'place').length;
+      const placeN = rows.filter((r) => r.kind !== 'food').length;
       const foodN = rows.length - placeN;
       const plannedN = planned(rows);
       const unplanned = rows.filter((r) => !r.entry.day && !r.missing).length;
@@ -161,7 +170,8 @@ export function GuideScreen(ctx) {
 
       if (!rows.length) {
         return h('div', { class: 'screen explore-screen' }, header, guideTabs(tripId, 'guide'), tip,
-          emptyState({ title: 'Your guide is empty', text: 'Save places from Explore and dishes from Taste. They appear here to arrange by interest or by day.', action: button({ label: 'Explore places', icon: 'compass', variant: 'primary', href: `#/trip/${tripId}/explore` }) }),
+          emptyState({ title: 'Your guide is empty', text: 'Save places from Explore and dishes from Taste, or add a place of your own. They appear here to arrange by interest or by day.', action: button({ label: 'Add your own place', icon: 'plus', variant: 'primary', key: 'add-own', onClick: () => customPlaceDialog({ store, tripId }) }) }),
+          h('div', { class: 'center' }, button({ label: 'Explore places', icon: 'compass', variant: 'secondary', href: `#/trip/${tripId}/explore` })),
           h('div', { class: 'center' }, h('a', { class: 'link', href: `#/trip/${tripId}/taste` }, 'Or taste the destination')),
           aboutCard());
       }
@@ -177,13 +187,14 @@ export function GuideScreen(ctx) {
           button({ label: 'Save as .txt', icon: 'download', variant: 'ghost', key: 'save-guide', onClick: saveText }),
           button({ label: 'Print', icon: 'file', variant: 'ghost', key: 'print-guide', href: `#/trip/${tripId}/guide/print` })),
         h('div', { class: 'plan-actions' },
+          button({ label: 'Add your own place', icon: 'plus', variant: 'secondary', key: 'add-own', onClick: () => customPlaceDialog({ store, tripId, defaultSub: '' }) }),
           button({ label: 'Suggest a draft plan', icon: 'sparkle', variant: 'secondary', disabled: unplanned === 0, key: 'draft', onClick: () => { suggestPlan(rows, days); ctx.refresh(); } }),
           plannedN ? button({ label: 'Clear day plan', icon: 'restore', variant: 'secondary', key: 'clear-plan', onClick: () => { clearPlan(rows); ctx.refresh(); } }) : null),
         h('p', { class: 'muted small', text: 'A day plan is a draft you arrange yourself: no times, routes or travel durations, because PackWise has no verified ones. The draft only keeps places with the same area name together.' }));
 
       const listFor = (group, opts) => h('section', { class: 'guide-section', 'aria-labelledby': `g-${group.id ?? 'x'}` },
         h('div', { class: 'guide-section-head' }, h('h2', { id: `g-${group.id ?? 'x'}`, class: 'section-title', text: group.label }), h('span', { class: 'muted small', text: plural(group.rows.length, 'item') })),
-        group.rows.length ? h('ul', { class: 'guide-list' }, group.rows.map((r, i) => guideRow(r, { days, canMove: opts.moves && group.rows.length > 1, first: i === 0, last: i === group.rows.length - 1, dayRows: group.rows }))) : h('p', { class: 'muted small', text: opts.empty }));
+        group.rows.length ? h('ul', { class: 'guide-list' }, group.rows.map((r, i) => guideRow(r, { days, canMove: opts.moves && group.rows.length > 1, first: i === 0, last: i === group.rows.length - 1, dayRows: group.rows, tripPlace: trip.destination || trip.name }))) : h('p', { class: 'muted small', text: opts.empty }));
 
       const body = view === 'interest'
         ? groupByInterest(rows).map((g) => listFor({ ...g, id: g.id }, { moves: false }))

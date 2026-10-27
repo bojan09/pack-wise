@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.5.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.6.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -1004,7 +1004,7 @@ await test('create trip: camping auto-suggests camping gear + backpack; season a
   // studio shows camping tokens for the gear bag
   await page.goto(`${BASE}#/trip/${trip.id}/studio`);
   await page.selectOption('select[name=bag]', gear.id);
-  await page.waitForSelector('.tray-token .tok-camping');
+  await page.waitForSelector('.tray-token[data-cat=camping] .item-art');
   // edit keeps the weather choices
   await page.goto(`${BASE}#/trip/${trip.id}/edit`);
   assert.equal(await page.isChecked('input[name=season][value=fall]'), true);
@@ -1022,7 +1022,7 @@ await test('season is suggested from Balkan dates and respects a manual choice',
   assert.equal(await season(), '');
   await page.fill('input[name=start]', '2026-07-10');
   assert.equal(await season(), 'summer');
-  assert.match(await page.locator('p[aria-live=polite]').first().innerText(), /Set from your dates: Summer/);
+  assert.match(await page.locator('p[aria-live=polite]:has-text("Set from your dates")').first().innerText(), /Set from your dates: Summer/);
   await page.fill('input[name=end]', '2026-07-20');
   assert.equal(await season(), 'summer');
   await page.fill('input[name=start]', '2027-01-05');
@@ -1670,6 +1670,7 @@ await test('welcome tagline is readable in light and dark', async ({ page }) => 
 
 // ============================================================ PHASE 3 (discovery): Explore Destination
 const explorePath = (id) => `${BASE}#/trip/${id}/explore`;
+const guidePath = (id) => `${BASE}#/trip/${id}/guide`;
 const cardCount = (page) => page.locator('.place-card').count();
 
 await test('explore: destination comes from the trip (no re-entry), sections, cards and honest admission labels', async ({ page }) => {
@@ -1731,14 +1732,14 @@ await test('explore: unsupported destination gets an honest empty state and no i
   await createTrip(page, { dest: 'Rome, Italy' });
   const id = await firstTrip(page);
   await page.goto(explorePath(id));
-  await page.waitForSelector('text=No verified guide');
+  await page.waitForSelector('text=No built-in guide');
   assert.equal(await cardCount(page), 0);
-  assert.match(await page.locator('.empty-title').innerText(), /No verified guide for “rome, italy” yet/i);
-  assert.match(await page.locator('.bubble-text').innerText(), /won’t make one up/);
+  assert.match(await page.locator('.empty-title').innerText(), /No built-in guide for “rome, italy” yet/i);
+  assert.match(await page.locator('.bubble-text').innerText(), /don’t have a built-in guide/);
   assert.ok((await page.locator('.covered .chip').count()) >= 12, 'lists what IS covered');
   assert.match(await page.locator('.covered').innerText(), /Croatia[\s\S]*Split/);
-  const href = await page.getAttribute('a:has-text("Search the map")', 'href');
-  assert.match(href, /^https:\/\/www\.openstreetmap\.org\/search\?query=Rome%2C%20Italy$/);
+  const osm = await page.getAttribute('.search-row a:has-text("OpenStreetMap")', 'href');
+  assert.match(osm, /^https:\/\/www\.openstreetmap\.org\/search\?query=rome$/, 'a search link per unmatched stop (lower-cased, as matched)');
   // browsing a covered destination does not change the trip
   const before = (await tripState(page)).trips[0];
   await page.click('.covered a:has-text("Zagreb")');
@@ -1746,7 +1747,7 @@ await test('explore: unsupported destination gets an honest empty state and no i
   assert.match(await page.locator('.banner-info').first().innerText(), /Browsing Zagreb instead of your trip/);
   assert.deepEqual((await tripState(page)).trips[0], before, 'trip record unchanged');
   await page.click('a:has-text("Use trip destination")');
-  await page.waitForSelector('text=No verified guide');
+  await page.waitForSelector('text=No built-in guide');
 });
 
 await test('explore: multi-stop, country-only and ambiguous destinations are handled, not guessed', async ({ page }) => {
@@ -1862,7 +1863,7 @@ await test('explore: saved places survive backup/restore and trip duplication; d
   await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
-  assert.equal(file.schemaVersion, 2);
+  assert.equal(file.schemaVersion, 3);
   assert.equal(file.data.entries.length, 2);
   await page.click('button:has-text("Clear data")');
   await page.click('dialog button:has-text("Delete everything")');
@@ -1895,11 +1896,36 @@ await test('explore: an existing v1 database upgrades to v2 without losing trips
   assert.deepEqual(after.entries, []);
   assert.equal(await page.locator('.banner-error').count(), 0);
   const raw = await idbSnapshotRaw(page);
-  assert.equal(raw.version, 2);
+  assert.equal(raw.version, 3);
   await page.goto(explorePath(after.trips[0].id));
   await page.waitForSelector('.place-card');
   await page.click('.save-btn >> nth=0');
   assert.equal((await tripState(page)).entries.length, 1);
+});
+
+await test('upgrade: a v2 database (saved places, no own places) upgrades to v3 with everything intact', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  await page.click('.save-btn >> nth=0');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 1);
+  await page.evaluate(() => window.__packwise.store.flush());
+  const before = await tripState(page);
+  await idbSetVersion(page, 2); // last used by the previous release
+  await reloadSettled(page);
+  const after = await tripState(page);
+  assert.deepEqual(after.trips, before.trips);
+  assert.deepEqual(after.entries, before.entries);
+  assert.equal(await page.locator('.banner-error').count(), 0);
+  assert.equal((await idbSnapshotRaw(page)).version, 3);
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  await page.click('button:has-text("Add your own place")');
+  await page.fill('dialog input[name=label]', 'After the upgrade');
+  await page.click('dialog button:has-text("Add place")');
+  await page.waitForSelector('.guide-row:has-text("After the upgrade")');
 });
 
 await test('explore: keyboard and screen-reader semantics (headings, pressed state, labelled links)', async ({ page }) => {
@@ -2037,7 +2063,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.5.0']);
+  assert.deepEqual(keys, ['packwise-v1.6.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2077,7 +2103,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.5.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.6.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2147,7 +2173,7 @@ await test('taste: several countries, multi-country trip, unsupported and ambigu
   await createTrip(page, { dest: 'Rome, Italy' });
   const rome = (await tripState(page)).trips.find((t) => t.name === 'Rome, Italy').id;
   await page.goto(tastePath(rome));
-  await page.waitForSelector('text=No food guide for');
+  await page.waitForSelector('text=No built-in food guide');
   assert.equal(await foodCards(page), 0);
   assert.ok(await page.locator('.covered .chip').count() >= 8);
   // browsing another country does not change the trip
@@ -2337,7 +2363,6 @@ await test('taste: reduced motion and offline with saved dishes', async ({ page,
 
 
 // ============================================================ PHASE 5 (discovery): My Trip Guide & packing integration
-const guidePath = (id) => `${BASE}#/trip/${id}/guide`;
 const nonGuide = (st) => JSON.stringify(['trips', 'bags', 'items', 'tasks'].map((k) => [...st[k]].sort((a, b) => a.id.localeCompare(b.id))));
 const rowsText = (page) => page.locator('.guide-row strong').allInnerTexts();
 
@@ -2655,6 +2680,215 @@ await test('guide: hidden packing ideas are saved with the trip (backup, duplica
   await page.waitForSelector('.pack-hints');
   await page.waitForFunction(() => window.__packwise.store.state.trips[0].hiddenHints.includes('footwear'));
   assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Comfortable walking shoes'));
+});
+
+
+// ============================================================ Phase 5.2: colors, item art, scope, own places
+await test('settings: separate background colors for light and dark mode apply, persist and survive reload', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings`);
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const token = (n) => page.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n);
+  assert.equal(await page.locator('[aria-label="Light mode"] input').count() >= 6, true);
+  assert.equal(await page.locator('[aria-label="Dark mode"] input').count() >= 5, true);
+  const before = await token('--bg');
+  // choose a light color while in light mode: the page changes
+  await page.click('[aria-label="Light mode"] label:has-text("Sage")');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.bgl), 'sage');
+  assert.notEqual(await token('--bg'), before);
+  assert.equal(await token('--bg'), '#eef3ea'.length ? await token('--bg') : '');
+  const sage = await token('--bg');
+  // a dark-mode choice must NOT change light mode
+  await page.click('[aria-label="Dark mode"] label:has-text("Midnight")');
+  assert.equal(await token('--bg'), sage, 'dark choice does not touch light mode');
+  // switch the theme to dark: the dark color shows, the light one does not
+  await page.click('label.seg-opt:has-text("Dark")');
+  const midnight = await token('--bg');
+  assert.notEqual(midnight, sage);
+  assert.ok(parseInt(midnight.slice(1, 3), 16) < 0x30, 'a dark background');
+  await page.click('[aria-label="Dark mode"] label:has-text("Forest")');
+  assert.notEqual(await token('--bg'), midnight);
+  // persists across reload; system theme follows the OS scheme with the matching choice
+  await reloadSettled(page);
+  assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.bgl, document.documentElement.dataset.bgd]), ['sage', 'forest']);
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("System")');
+  await page.emulateMedia({ colorScheme: 'light' });
+  assert.equal(await token('--bg'), sage, 'system + light OS shows the light choice');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  assert.notEqual(await token('--bg'), sage, 'system + dark OS shows the dark choice');
+  assert.ok(parseInt((await token('--bg')).slice(1, 3), 16) < 0x30);
+  void bg;
+  // no overflow and labelled controls
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.swatch-bg input')].filter((i) => !i.getAttribute('aria-label')).length), 0);
+});
+
+await test('studio: every item gets its own picture, each category its own color, in light and dark', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Rome, Italy', type: 'City', bags: ['Checked'] });
+  const id = await firstTrip(page);
+  await page.goto(`${BASE}#/trip/${id}/studio`);
+  await page.waitForSelector('.tray-token, .tile-item');
+  const info = await page.evaluate(() => {
+    const arts = [...document.querySelectorAll('.tile-item .item-art')].map((s) => s.innerHTML.length && [...s.querySelectorAll('path,rect,circle,ellipse,line')].map((n) => n.getAttribute('d') || [n.getAttribute('x'), n.getAttribute('y'), n.getAttribute('r')].join()).join('|'));
+    const names = [...document.querySelectorAll('.tile-item .tile-name')].map((n) => n.textContent);
+    const cats = [...document.querySelectorAll('.tile-item')].map((li) => [li.dataset.cat, getComputedStyle(li).getPropertyValue('--cat').trim()]);
+    return { arts, names, cats };
+  });
+  assert.ok(info.arts.length >= 6, `tiles with art: ${info.arts.length}`);
+  assert.ok(info.arts.every(Boolean), 'every tile has an illustration');
+  const byName = new Map();
+  info.names.forEach((n, i) => byName.set(n, info.arts[i]));
+  assert.ok(new Set(byName.values()).size >= byName.size - 4, 'distinct pictures (a few kinds legitimately share one)');
+  const colors = new Map(info.cats);
+  assert.ok(colors.size >= 4, 'several categories present');
+  assert.equal(new Set([...colors.values()]).size, colors.size, 'each category has a different color');
+  // category chips use the category color; clicking filters
+  const chipCats = await page.evaluate(() => [...document.querySelectorAll('.chip[data-cat]')].map((c) => c.dataset.cat));
+  assert.ok(chipCats.length >= 2 && new Set(chipCats).size === chipCats.length, `category chips: ${chipCats}`);
+  // tray names are not broken in the middle of a word
+  const broken = await page.evaluate(() => [...document.querySelectorAll('.tray-name')].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent));
+  assert.deepEqual(broken, [], 'no clipped tray names');
+  // dark mode keeps shapes visible (outline filter) and the colors defined
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const dark = await page.evaluate(() => ({ filter: getComputedStyle(document.querySelector('.item-art')).filter, cat: getComputedStyle(document.querySelector('.tile-item')).getPropertyValue('--cat-ink').trim() }));
+  assert.match(dark.filter, /drop-shadow/);
+  assert.ok(dark.cat);
+  // checklist: category header icons are category-colored too
+  await page.goto(`${BASE}#/trip/${id}`);
+  await page.waitForSelector('.category-card');
+  const heads = await page.evaluate(() => [...document.querySelectorAll('.category-card')].map((c) => [c.dataset.cat, getComputedStyle(c.querySelector('.category-icon')).backgroundColor]));
+  assert.ok(heads.length >= 4);
+  assert.equal(new Set(heads.map((h) => h[1])).size, heads.length, 'each category header has its own tint');
+});
+
+await test('trip scope: "within my country" skips abroad-only tasks and items; the home country suggests it; old trips are not changed', async ({ page }) => {
+  await skipWelcome(page);
+  // an abroad trip (default) keeps passport / insurance / adapter
+  await createTrip(page, { dest: 'Rome, Italy' });
+  let st = await tripState(page);
+  const rome = st.trips[0];
+  assert.equal(rome.scope, 'abroad');
+  assert.ok(st.tasks.some((t) => t.tripId === rome.id && t.title === 'Buy travel insurance'));
+  assert.ok(st.items.some((i) => i.tripId === rome.id && i.name === 'Travel adapter'));
+  // a domestic trip skips them
+  await page.goto(`${BASE}#/trips/new`);
+  await page.click('label.tile:has-text("Custom")');
+  await page.fill('input[name=destination]', 'Veles - Babuna');
+  await page.click('label.seg-opt:has-text("Within my country")');
+  await page.fill('input[name=start]', '2026-11-29');
+  await page.fill('input[name=end]', '2026-12-01');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Veles")');
+  st = await tripState(page);
+  const veles = st.trips.find((t) => t.name === 'Veles - Babuna');
+  assert.equal(veles.scope, 'domestic');
+  const titles = st.tasks.filter((t) => t.tripId === veles.id).map((t) => t.title);
+  assert.ok(!titles.includes('Buy travel insurance') && !titles.includes('Notify bank about travel') && !titles.includes('Check passport / ID validity'));
+  assert.ok(titles.includes('Confirm accommodation booking') && titles.includes('Check the weather forecast'));
+  const names = st.items.filter((i) => i.tripId === veles.id).map((i) => i.name);
+  assert.ok(!names.includes('Travel adapter') && !names.includes('Travel insurance details') && !names.includes('ID / Passport'));
+  assert.ok(names.includes('ID card / driving licence') && names.includes('Phone charger'));
+  // the Travel Tasks screen offers to trim an already-created domestic trip's abroad-only tasks
+  await page.evaluate(([tid]) => { const s = window.__packwise.store; s.addTask?.(tid, { title: 'Buy travel insurance', phase: 'before' }); }, [veles.id]);
+  await page.goto(`${BASE}#/trip/${veles.id}/tasks`);
+  await page.waitForSelector('.scope-banner');
+  assert.match(await page.locator('.scope-banner').innerText(), /usually only needed abroad/);
+  await page.click('.scope-banner button:has-text("Remove it")');
+  await page.waitForSelector('.scope-banner', { state: 'detached' });
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForSelector('.scope-banner');
+  // old trips (no scope stored) behave like abroad and show no banner
+  await page.evaluate((tid) => { const s = window.__packwise.store; s.updateTrip(tid, { scope: '' }); }, veles.id);
+  await page.waitForSelector('.scope-banner', { state: 'detached' });
+  // home country in Settings pre-selects the scope from the destination
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.selectOption('select[name=homeCountry]', 'RS');
+  await page.goto(`${BASE}#/trips/new`);
+  await page.fill('input[name=destination]', 'Belgrade');
+  await page.press('input[name=destination]', 'Tab');
+  await page.waitForFunction(() => document.querySelector('input[name=scope][value=domestic]')?.checked);
+  assert.match(await page.locator('.trip-form').innerText(), /Set from your home country \(Serbia\)/);
+  await page.fill('input[name=destination]', 'Rome, Italy');
+  await page.press('input[name=destination]', 'Tab');
+  await page.waitForTimeout(300);
+  // Rome is not in the catalog, so the choice is left alone; picking it by hand wins over auto
+  await page.click('label.seg-opt:has-text("Abroad")');
+  await page.fill('input[name=destination]', 'Belgrade');
+  await page.press('input[name=destination]', 'Tab');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('input[name=scope][value=abroad]').isChecked(), true, 'a manual choice is never overridden');
+});
+
+await test('unsupported destination: friendly plan-it-yourself page, own places flow into My Guide with day, packing idea and text', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Veles - Babuna', type: 'Custom', start: '2026-11-29', end: '2026-12-01' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.own-places');
+  const text = await page.locator('.explore-screen').innerText();
+  assert.match(text, /No built-in guide for “Veles - Babuna” yet/);
+  assert.ok(!/won’t make one up/.test(text), 'no dismissive wording');
+  assert.match(await page.locator('.bubble-text').innerText(), /add your own places/);
+  // search links for each unmatched stop, all external + labelled
+  const links = await page.evaluate(() => [...document.querySelectorAll('.search-row a')].map((a) => [a.getAttribute('target'), a.getAttribute('rel'), new URL(a.href).host]));
+  assert.ok(links.length >= 6, 'three links for each of the two stops');
+  assert.ok(links.every(([t, r]) => t === '_blank' && r === 'noopener noreferrer'));
+  assert.deepEqual([...new Set(links.map((l) => l[2]))].sort(), ['en.wikipedia.org', 'www.google.com', 'www.openstreetmap.org']);
+  assert.equal(await cardCount(page), 0, 'still no invented catalog places');
+  // add your own place via the dialog (keyboard friendly), validation first
+  await page.click('button:has-text("Add your own place")');
+  await page.waitForSelector('dialog[open]');
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('name')), 'label', 'focus starts in the name field');
+  await page.click('dialog button:has-text("Add place")');
+  assert.match(await page.locator('dialog .field-error').innerText(), /Give the place a name/);
+  await page.fill('dialog input[name=label]', 'Babuna waterfall hike');
+  await page.fill('dialog input[name=sub]', 'Veles');
+  await page.selectOption('dialog select[name=type]', 'nature');
+  await page.fill('dialog textarea[name=note]', 'Start early');
+  await page.click('dialog button:has-text("Add place")');
+  await page.waitForSelector('dialog', { state: 'detached' });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  assert.deepEqual(await page.locator('.guide-section h2').allInnerTexts(), ['My own places']);
+  assert.equal(await page.locator('.guide-row .adm-tag').count(), 0, 'no admission is claimed for a user-written place');
+  assert.match(await page.locator('.guide-row').innerText(), /Babuna waterfall hike[\s\S]*Veles[\s\S]*My place/);
+  assert.match(await page.locator('.guide-row a').getAttribute('href'), /query=Babuna%20waterfall%20hike%2C%20Veles%20-%20Babuna$/);
+  // packing ideas come from the chosen type; nothing is added automatically
+  const items0 = (await tripState(page)).items.length;
+  await page.evaluate((tid) => { const st = window.__packwise.store; st.state.items.filter((i) => i.tripId === tid && /shoe|bottle/i.test(i.name)).forEach((i) => st.deleteItem(i.id)); }, id);
+  await page.waitForSelector('.hint:has-text("walking shoes")');
+  assert.equal((await tripState(page)).items.length < items0, true);
+  // day plan + edit + undoable remove
+  await page.selectOption('select[aria-label="Day for Babuna waterfall hike"]', '2');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.kind === 'custom' && e.day === 2));
+  await page.click('button[aria-label="Edit Babuna waterfall hike"]');
+  await page.waitForSelector('dialog[open]');
+  await page.fill('dialog input[name=label]', 'Babuna waterfall');
+  await page.click('dialog button:has-text("Save")');
+  await page.waitForSelector('.guide-row:has-text("Babuna waterfall")');
+  assert.equal((await tripState(page)).entries.find((e) => e.kind === 'custom').day, 2, 'edit keeps the day');
+  await page.click('button[aria-label^="Remove Babuna waterfall"]');
+  assert.equal(await page.locator('.guide-row').count(), 0);
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForSelector('.guide-row:has-text("Babuna waterfall")');
+  assert.equal((await tripState(page)).entries.filter((e) => e.kind === 'custom').length, 1);
+  // survives backup / restore
+  await page.evaluate(() => window.__packwise.store.flush());
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  assert.ok(JSON.parse(json).data.entries.some((e) => e.kind === 'custom' && e.label === 'Babuna waterfall'));
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.kind === 'custom'));
+  // taste page for an uncovered destination is also friendly
+  await page.goto(tastePath(id));
+  await page.waitForSelector('text=No built-in food guide');
 });
 
 

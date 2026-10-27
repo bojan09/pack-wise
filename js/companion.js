@@ -68,7 +68,7 @@ export function tasteMessage({ status, countryLabel = '', asked = '', saved = 0,
   const gone = new Set(dismissed);
   const list = [];
   if (status !== 'covered') {
-    list.push({ id: `taste-none:${asked}`, text: `I don’t have a food guide for “${asked}” yet, and I won’t make one up. You can browse a covered country below.`, mood: 'wave' });
+    list.push({ id: `taste-none:${asked}`, text: `I don’t have a built-in food guide for “${asked}” yet. You can browse a covered country below.`, mood: 'wave' });
   } else {
     if (saved > 0) list.push({ id: `taste-saved:${countryLabel}`, text: `${saved} on your Must-Try list. Tick “I tried it” as you go; it stays on this device.`, mood: 'happy' });
     list.push({ id: `taste-intro:${countryLabel}`, text: `Hungry? Here are regional favourites for ${countryLabel}. Check ingredients with the cook if you have allergies or a special diet.`, mood: 'happy' });
@@ -80,7 +80,7 @@ export function exploreMessage({ status, destName = '', asked = '', saved = 0, d
   const gone = new Set(dismissed);
   const list = [];
   if (status === 'none' || status === 'ambiguous') {
-    list.push({ id: `explore-none:${asked}`, text: `I don’t have a verified guide for “${asked}” yet, and I won’t make one up. You can browse a covered destination below.`, mood: 'wave' });
+    list.push({ id: `explore-none:${asked}`, text: `I don’t have a built-in guide for “${asked}” yet. You can add your own places, search the map, or browse a covered destination.`, mood: 'wave' });
   } else if (status === 'country') {
     list.push({ id: `explore-country:${asked}`, text: 'Pick a city to see places. A whole country is too big to guess at.', mood: 'happy' });
   } else if (destName) {

@@ -5,7 +5,7 @@ import { icon } from '../ui/icons.js';
 import { button, checkbox, chip, emptyState, field, iconButton, progressBar, ring, selectInput, stepper } from '../ui/components.js';
 import { actionSheet, confirmDialog, showDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
-import { BAG_KINDS, CATEGORY_PRESETS, LIMITS, PRIORITIES, categoryMeta, normalizeCategory } from '../models.js';
+import { BAG_KINDS, CATEGORY_PRESETS, LIMITS, PRIORITIES, categoryKey, categoryMeta, normalizeCategory } from '../models.js';
 import { bagProgress, categoryProgress, essentialsLeft, isItemPacked, sumQty } from '../progress.js';
 import { getTrip, tripBags, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
@@ -174,7 +174,7 @@ export function ChecklistScreen(ctx) {
     const reorder = canReorder();
     return h(
       'section',
-      { class: 'card category-card', 'aria-label': meta.label },
+      { class: 'card category-card', 'aria-label': meta.label, 'data-cat': categoryKey(cat) },
       h(
         'button',
         { type: 'button', class: 'category-head', 'aria-expanded': open ? 'true' : 'false', 'aria-controls': bodyId, 'data-key': `cat-${cat}`, onClick: () => { if (open) collapsed.add(cat); else collapsed.delete(cat); ctx.refresh(); } },

@@ -1,12 +1,13 @@
 // Travel preparation tasks (separate from luggage items).
 import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
+import { isAbroadOnlyTask } from '../templates.js';
 import { button, checkbox, chip, emptyState, field, iconButton, progressBar, selectInput } from '../ui/components.js';
 import { showDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { LIMITS, TASK_PHASES, cleanDate } from '../models.js';
 import { daysUntil, taskProgress } from '../progress.js';
-import { formatDate } from '../format.js';
+import { formatDate, plural } from '../format.js';
 import { getTrip, sortedTrips, tripTasks } from '../selectors.js';
 import { pageHeader, tripSubtitle } from './shared.js';
 
@@ -60,6 +61,8 @@ export function TasksScreen(ctx) {
           })()
         : null;
 
+      const abroadTasks = trip.scope === 'domestic' ? all.filter((t) => isAbroadOnlyTask(t.title) && !t.done) : [];
+
       const row = (t) => {
         const diff = t.dueDate && !t.done ? daysUntil(t.dueDate) : null;
         const due = t.dueDate ? h('span', { class: `due${diff !== null && diff < 0 ? ' is-late' : ''}`, text: `${diff !== null && diff < 0 ? 'Overdue · ' : 'Due '}${formatDate(t.dueDate)}` }) : null;
@@ -78,6 +81,7 @@ export function TasksScreen(ctx) {
         { class: 'screen tasks-screen' },
         pageHeader({ title: 'Travel Tasks', subtitle: tripSubtitle(trip) || trip.name, back: { href: `#/trip/${tripId}`, label: 'Back to packing list' }, actions: [iconButton({ icon: 'plus', label: 'Add task', onClick: () => taskDialog({ store, tripId, defaultPhase: phase === 'all' ? 'before' : phase }), className: 'icon-btn-primary', key: 'task-add-top' })] }),
         switcher ? h('div', { class: 'toolbar' }, switcher) : null,
+        abroadTasks.length ? h('div', { class: 'banner banner-info scope-banner' }, icon('info', { size: 18 }), h('span', { text: `This trip is within your country, but ${plural(abroadTasks.length, 'task')} here ${abroadTasks.length === 1 ? 'is' : 'are'} usually only needed abroad (${abroadTasks.map((t) => t.title.toLowerCase()).join(', ')}).` }), button({ label: `Remove ${abroadTasks.length === 1 ? 'it' : 'them'}`, variant: 'secondary', key: 'drop-abroad', onClick: () => { const gone = abroadTasks.map((t) => store.deleteTask(t.id)).filter(Boolean); toast(`Removed ${plural(gone.length, 'task')}`, { action: { label: 'Undo', run: () => gone.forEach((t) => store.restoreTask(t)) } }); } })) : null,
         h('section', { class: 'card summary-card', 'aria-label': 'Task progress' }, h('div', { class: 'row-between' }, h('strong', { text: `${p.done} / ${p.total} completed` }), h('strong', { class: 'pct', text: `${p.percent}%` })), progressBar(p.percent, { label: 'Travel task progress' })),
         h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter tasks' }, chip({ label: 'All', count: all.length, active: phase === 'all', key: 'tp-all', onClick: () => { phase = 'all'; ctx.refresh(); } }), TASK_PHASES.map((ph) => chip({ label: ph.label, count: all.filter((t) => t.phase === ph.id).length, active: phase === ph.id, key: `tp-${ph.id}`, onClick: () => { phase = ph.id; ctx.refresh(); } }))),
         shown.length ? h('ul', { class: 'card task-list' }, shown.map(row)) : emptyState({ title: all.length ? 'Nothing in this group' : 'No tasks yet', text: 'Tasks are things to do — separate from what goes in your bags.', showCompanion: false, action: button({ label: 'Add task', icon: 'plus', variant: 'primary', onClick: () => taskDialog({ store, tripId, defaultPhase: phase === 'all' ? 'before' : phase }) }) }),

@@ -85,7 +85,7 @@ test('groupFood follows category order and drops empty groups', () => {
 });
 
 test('taste companion message: honest when uncovered, dismissible, mentions saved', () => {
-  assert.match(tasteMessage({ status: 'none', asked: 'Paris' }).text, /won’t make one up/);
+  assert.match(tasteMessage({ status: 'none', asked: 'Paris' }).text, /don’t have a built-in food guide/);
   const intro = tasteMessage({ status: 'covered', countryLabel: 'Serbia' });
   assert.match(intro.text, /Serbia/);
   assert.equal(tasteMessage({ status: 'covered', countryLabel: 'Serbia', dismissed: [intro.id] }), null);

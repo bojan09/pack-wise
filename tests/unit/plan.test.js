@@ -191,3 +191,71 @@ test('hidden packing ideas live on the trip: validated, in backups, copied by du
   // trips from before this field existed load with an empty list
   assert.deepEqual(parseBackup(JSON.stringify({ ...backup, data: { ...backup.data, trips: backup.data.trips.map(({ hiddenHints, ...rest }) => rest) } })).data.trips[0].hiddenHints, []);
 });
+
+import { CUSTOM_TYPES, customRef, normalizeEntry } from '../../js/models.js';
+import { KINDS, googleMapsUrl } from '../../js/guide.js';
+
+test('custom places: stable ref, validation, sync with place kinds', () => {
+  assert.deepEqual([...CUSTOM_TYPES].sort(), KINDS.map((k) => k.id).sort(), 'custom types match the place kinds');
+  assert.equal(customRef(' Waterfall Hike '), customRef('waterfall hike'));
+  assert.notEqual(customRef('Babuna waterfall'), customRef('Babuna gorge'));
+  assert.match(customRef('Бабуна'), /^c-[a-z0-9]+$/, 'non-latin names still get a valid ref');
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'custom', refId: customRef('x'), label: '   ' }), null, 'needs a name');
+  const e = normalizeEntry({ tripId: 't1', kind: 'custom', refId: customRef('x'), label: 'x'.repeat(200), sub: 'y'.repeat(200), type: 'nature', saved: true });
+  assert.equal(e.label.length, 80);
+  assert.equal(e.sub.length, 60);
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'custom', refId: 'c-1', label: 'ok', type: 'bogus' }).type, '');
+  assert.equal(normalizeEntry({ tripId: 't1', kind: 'place', refId: 'a/b', label: 'sneaky', type: 'nature' }).label, '', 'label only belongs to custom entries');
+  assert.equal(googleMapsUrl({ name: 'Waterfall' }, { name: 'Veles', country: '' }), 'https://www.google.com/maps/search/?api=1&query=Waterfall%2C%20Veles');
+});
+
+test('custom places: add, rename, plan, remove with undo; join the guide, the draft, hints and text export', async () => {
+  const { s, t } = await fresh();
+  const a = s.addCustomPlace(t.id, { label: 'Babuna waterfall hike', sub: 'Veles', type: 'nature', note: 'bring snacks' });
+  assert.equal(a.saved, true);
+  assert.equal(s.addCustomPlace(t.id, { label: '  ' }), null);
+  assert.equal(s.addCustomPlace('nope', { label: 'x' }), null);
+  assert.equal(s.addCustomPlace(t.id, { label: 'babuna WATERFALL hike', note: 'updated', sub: 'Veles', type: 'nature' }).note, 'updated', 'same name (any case) updates instead of duplicating');
+  assert.equal(tripEntries(s.state, t.id, 'custom').length, 1);
+  s.planEntry(t.id, 'custom', a.refId, 2);
+  const rows = rowsOf(s, t);
+  assert.deepEqual([rows[0].kind, rows[0].title, rows[0].group, rows[0].place.admission, rows[0].place.setting], ['custom', 'babuna WATERFALL hike', 'mine', null, 'outdoor']);
+  assert.deepEqual(groupByInterest(rows).map((g) => g.label), ['My own places']);
+  // hints work from the type; nothing claims admission
+  const ids = packHints(rows, []).map((x) => x.id);
+  assert.ok(ids.includes('footwear') && ids.includes('water-bottle') && !ids.includes('entry'));
+  // rename keeps day + order; a clash with another place is refused
+  const b = s.addCustomPlace(t.id, { label: 'Veles old town', type: 'street' });
+  assert.equal(s.editCustomPlace(t.id, b.refId, { label: 'babuna WATERFALL hike' }), null);
+  const r = s.editCustomPlace(t.id, a.refId, { label: 'Babuna waterfall', type: 'nature' });
+  assert.equal(r.day, 2);
+  assert.equal(tripEntries(s.state, t.id, 'custom').length, 2);
+  assert.ok(!tripEntries(s.state, t.id).some((e) => e.refId === a.refId), 'the old ref is gone');
+  // draft plan treats custom places as places
+  const draft = draftPlan(rowsOf(s, t), 3);
+  assert.deepEqual(draft.map((d) => d.refId), [b.refId]);
+  // text export labels them
+  const txt = guideToText(guideModel(s.state.trips[0], rowsOf(s, t), 3));
+  assert.match(txt, /Babuna waterfall \(Veles\) \[My place\] — updated/);
+  assert.doesNotMatch(txt, /Free area|Ticketed|Check admission/);
+  // removal is complete (no hidden leftovers) and undoable
+  const gone = s.removeEntry(t.id, 'custom', r.refId);
+  assert.equal(tripEntries(s.state, t.id, 'custom').length, 1);
+  assert.equal(s.restoreEntry(gone).label, 'Babuna waterfall');
+  assert.equal(s.restoreEntry(gone), null, 'restoring twice does nothing');
+  s.setSaved(t.id, 'custom', b.refId, false);
+  assert.equal(tripEntries(s.state, t.id, 'custom').length, 1, 'unsave deletes custom places outright');
+});
+
+test('custom places survive backup, duplicate and merge; an old build’s v2 data upgrades', async () => {
+  const { s, t } = await fresh();
+  const a = s.addCustomPlace(t.id, { label: 'Lake picnic', type: 'water' });
+  s.planEntry(t.id, 'custom', a.refId, 1);
+  const parsed = parseBackup(JSON.stringify(s.exportData()));
+  assert.equal(parsed.data.entries.find((e) => e.kind === 'custom').label, 'Lake picnic');
+  const copy = s.duplicateTrip(t.id);
+  const copied = tripEntries(s.state, copy.id, 'custom');
+  assert.deepEqual([copied.length, copied[0].label, copied[0].day], [1, 'Lake picnic', 1]);
+  const v2 = { app: 'packwise', schemaVersion: 2, data: { trips: [], bags: [], items: [], tasks: [], templates: [], entries: [] } };
+  assert.equal(parseBackup(JSON.stringify(v2)).data.entries.length, 0);
+});

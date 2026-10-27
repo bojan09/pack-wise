@@ -3,6 +3,8 @@
 // to the store, and every animation is cosmetic and cancellable, so rapid taps, bag
 // switches and navigation can never leave the saved checklist in a wrong state.
 import { h } from '../dom.js';
+import { categoryKey } from '../models.js';
+import { itemArt } from './itemart.js';
 
 export const SLOTS = 24; // tokens drawn in the case; the rest are summarised as "+N"
 const COLS = 6;
@@ -16,14 +18,10 @@ export const VIEWS = [
 ];
 export const ZOOMS = [1, 1.25, 1.5];
 
-const PALETTE = ['#F28A72', '#31B6A6', '#E7B66C', '#5B7FA8', '#9A7FD1', '#7FB069', '#D9627D', '#4A90A4'];
-const hash = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-
-/** Small category-specific illustration used in the case, the tray and the item tiles. */
+/** Small picture of the item itself (see itemart.js), tinted with its category color. Used in the case, tray and tiles. */
 export function tokenFace(item, { size = 'md' } = {}) {
-  const color = PALETTE[hash(item.name) % PALETTE.length];
-  const cat = ['clothing', 'toiletries', 'electronics', 'documents', 'essentials', 'camping'].includes(item.category) ? item.category : 'misc';
-  const face = h('span', { class: `tok tok-${cat} tok-${size}`, style: { '--tok': color }, 'aria-hidden': 'true' }, h('span', { class: 'tok-a' }), h('span', { class: 'tok-b' }));
+  const cat = categoryKey(item.category);
+  const face = h('span', { class: `tok tok-${size}`, 'data-cat': cat, 'aria-hidden': 'true' }, itemArt(item.name, cat));
   if (item.target > 1) face.append(h('span', { class: 'tok-count', text: `×${item.target}` }));
   return face;
 }
@@ -104,7 +102,7 @@ export function createStage({ motion, onSelect, onPackTray }) {
   }
 
   function trayToken(item) {
-    const b = h('button', { type: 'button', class: 'tray-token', 'data-id': item.id, 'aria-label': `Pack ${item.name}${item.target > 1 ? ` (${item.packed} of ${item.target})` : ''}`, onClick: () => onPackTray(item.id) }, tokenFace(item), h('span', { class: 'tray-name', text: item.name }));
+    const b = h('button', { type: 'button', class: 'tray-token', 'data-cat': categoryKey(item.category), 'data-id': item.id, 'aria-label': `Pack ${item.name}${item.target > 1 ? ` (${item.packed} of ${item.target})` : ''}`, onClick: () => onPackTray(item.id) }, tokenFace(item), h('span', { class: 'tray-name', text: item.name }));
     if (item.packed > 0 && item.packed < item.target) b.append(h('span', { class: 'tray-partial', text: `${item.packed}/${item.target}` }));
     return b;
   }

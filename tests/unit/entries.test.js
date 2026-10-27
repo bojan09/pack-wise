@@ -12,9 +12,10 @@ const fresh = async (opts) => { const a = createMemoryAdapter(opts); const s = c
 const mk = (s, name = 'Belgrade') => s.createTrip({ name, destination: name, type: 'city' }, { bagKinds: ['carry-on'] });
 
 test('schema is v2 and v1 data migrates with empty entries', () => {
-  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(SCHEMA_VERSION, 3);
   const r = migrate({ trips: [] }, 1);
-  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 2, true, []]);
+  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 3, true, []]);
+  assert.deepEqual([migrate({ trips: [], entries: [] }, 2).from, migrate({ trips: [], entries: [] }, 2).to], [2, 3]);
   assert.deepEqual(migrate({ trips: [], entries: [{ id: 'x' }] }, 1).data.entries, [{ id: 'x' }]); // never drops existing
 });
 
@@ -138,8 +139,8 @@ test('v1 data on disk upgrades to v2, keeps a safety copy, and loads', async () 
 
 test('explore tip: honest about coverage, deterministic, dismissible', () => {
   const none = exploreMessage({ status: 'none', asked: 'Rome, Italy' });
-  assert.match(none.text, /don’t have a verified guide/);
-  assert.match(none.text, /won’t make one up/);
+  assert.match(none.text, /don’t have a built-in guide/);
+  assert.match(none.text, /add your own places/);
   assert.equal(exploreMessage({ status: 'none', asked: 'Rome, Italy', dismissed: [none.id] }), null);
   assert.match(exploreMessage({ status: 'country', asked: 'Croatia' }).text, /Pick a city/);
   const intro = exploreMessage({ status: 'covered', destName: 'Belgrade' });
@@ -147,4 +148,40 @@ test('explore tip: honest about coverage, deterministic, dismissible', () => {
   assert.deepEqual(exploreMessage({ status: 'covered', destName: 'Belgrade' }), intro);
   assert.match(exploreMessage({ status: 'covered', destName: 'Belgrade', saved: 3 }).text, /3 saved/);
   assert.equal(exploreMessage({ status: 'covered', destName: 'Belgrade', saved: 3, dismissed: ['explore-saved:Belgrade', 'explore-intro:Belgrade'] }), null);
+});
+
+import { generatePackingList, generateTasks, isAbroadOnlyTask } from '../../js/templates.js';
+import { HOME_COUNTRIES } from '../../js/prefs.js';
+import { CATALOG } from '../../js/data/catalog.js';
+
+test('domestic trips skip abroad-only tasks and items; abroad and unset trips are unchanged', () => {
+  const abroad = generateTasks({ transport: 'car', scope: 'abroad' }).map((t) => t.title);
+  assert.deepEqual(generateTasks({ transport: 'car' }).map((t) => t.title), abroad, 'unset behaves like abroad');
+  assert.ok(abroad.includes('Buy travel insurance') && abroad.includes('Notify bank about travel') && abroad.includes('Check passport / ID validity'));
+  const home = generateTasks({ transport: 'car', scope: 'domestic' }).map((t) => t.title);
+  assert.ok(!home.some(isAbroadOnlyTask) && !home.includes('Check passport / ID validity'));
+  assert.ok(home.includes('Check your ID is valid') && home.includes('Confirm accommodation booking') && home.includes('Check the weather forecast'));
+  const names = (scope) => generatePackingList({ type: 'city', days: 3, scope }).map((i) => i.name);
+  assert.ok(names('abroad').includes('Travel adapter') && names('').includes('ID / Passport') && names('abroad').includes('Travel insurance details'));
+  assert.ok(!names('domestic').includes('Travel adapter') && !names('domestic').includes('Travel insurance details'));
+  assert.ok(names('domestic').includes('ID card / driving licence') && !names('domestic').includes('ID / Passport'));
+  assert.ok(names('domestic').includes('Phone charger') && names('domestic').includes('Tickets / booking confirmations'), 'everything else stays');
+});
+
+test('scope is stored on the trip, validated, drives generation, and survives backup and duplicate', async () => {
+  const { store } = await fresh();
+  const home = store.createTrip({ name: 'Veles', destination: 'Veles - Babuna', type: 'custom', scope: 'domestic', transport: 'car' }, { bagKinds: ['backpack'] });
+  assert.equal(home.scope, 'domestic');
+  assert.ok(!store.state.tasks.filter((t) => t.tripId === home.id).some((t) => isAbroadOnlyTask(t.title)));
+  assert.ok(!store.state.items.filter((i) => i.tripId === home.id).some((i) => i.name === 'Travel adapter'));
+  const away = store.createTrip({ name: 'Rome', destination: 'Rome', type: 'city' });
+  assert.equal(away.scope, '');
+  assert.ok(store.state.tasks.some((t) => t.tripId === away.id && t.title === 'Buy travel insurance'));
+  assert.equal(store.createTrip({ name: 'x', destination: 'x', type: 'city', scope: 'mars' }).scope, '');
+  assert.equal(store.duplicateTrip(home.id).scope, 'domestic');
+  assert.equal(parseBackup(JSON.stringify(store.exportData())).data.trips.find((t) => t.id === home.id).scope, 'domestic');
+});
+
+test('home-country choices match the destination catalog', () => {
+  assert.deepEqual(HOME_COUNTRIES.map((c) => [c.id, c.label]), CATALOG.countries.map((c) => [c.id, c.name]));
 });

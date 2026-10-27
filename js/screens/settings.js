@@ -1,11 +1,11 @@
 // Settings: Appearance · Data · Preferences · About (tabs, as in the approved design).
 import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
-import { button, segmented, field } from '../ui/components.js';
+import { button, segmented, field, selectInput } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { backgroundArt, logoMark } from '../ui/art.js';
-import { ACCENTS, BACKGROUNDS, MOTION_LEVELS, getPrefs, setPrefs } from '../prefs.js';
+import { ACCENTS, BACKGROUNDS, HOME_COUNTRIES, DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, MOTION_LEVELS, getPrefs, setPrefs } from '../prefs.js';
 import { hapticsSupported, buzz } from '../haptics.js';
 import { STORAGE_NOTE } from '../install.js';
 import { APP_VERSION } from '../models.js';
@@ -42,10 +42,12 @@ export function SettingsScreen(ctx) {
       const art = backgroundArt(b.id);
       return h('label', { class: 'bg-opt' }, h('input', { type: 'radio', name: 'background', value: b.id, checked: b.id === prefs.background, onChange: () => setPrefs({ background: b.id }) }), h('span', { class: `bg-thumb bg-thumb-${b.id}` }, art), h('span', { class: 'bg-label', text: b.label }));
     }));
+    const colorPicker = (name, label, list, value, key) => h('div', { class: 'bgc-group' }, h('h3', { class: 'bgc-title', text: label }), h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': label }, list.map((c) => h('label', { class: 'swatch swatch-bg', title: c.label }, h('input', { type: 'radio', name, value: c.id, checked: c.id === value, 'aria-label': `${label}: ${c.label}`, onChange: () => setPrefs({ [key]: c.id }) }), h('span', { style: { background: c.swatch } }, icon('check', { size: 16 })), h('span', { class: 'swatch-name', text: c.label })))));
     return h(
       'div',
       { class: 'settings-stack' },
       h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Theme' }), segmented({ name: 'theme', label: 'Theme', value: prefs.theme, options: [{ id: 'light', label: 'Light', icon: 'sun' }, { id: 'dark', label: 'Dark', icon: 'moon' }, { id: 'system', label: 'System', icon: 'monitor' }], onChange: (v) => setPrefs({ theme: v }) }), h('h2', { class: 'card-title', text: 'Accent color' }), swatches),
+      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Background color' }), h('p', { class: 'muted small', text: 'Pick one color for light mode and a different one for dark mode. Each applies only in its own mode.' }), colorPicker('bgLight', 'Light mode', LIGHT_BACKGROUNDS, prefs.bgLight, 'bgLight'), colorPicker('bgDark', 'Dark mode', DARK_BACKGROUNDS, prefs.bgDark, 'bgDark')),
       h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Background style' }), bgs),
       h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Motion intensity' }), segmented({ name: 'motion', label: 'Motion intensity', value: prefs.motion, options: MOTION_LEVELS, onChange: (v) => setPrefs({ motion: v }) }), h('p', { class: 'muted small', text: 'Controls the suitcase animations and celebrations. Your device’s “reduce motion” setting always takes priority.' })),
     );
@@ -112,6 +114,7 @@ export function SettingsScreen(ctx) {
         { class: 'card settings-card' },
         h('h2', { class: 'card-title', text: 'Personal' }),
         field({ label: 'Your name (shown in the greeting)', input: name }),
+        field({ label: 'Home country (optional)', input: selectInput({ name: 'homeCountry', value: prefs.homeCountry, options: [{ id: '', label: 'Not set' }, ...HOME_COUNTRIES], onChange: (e) => { setPrefs({ homeCountry: e.target.value }); toast('Saved', { timeout: 1500 }); } }), hint: 'Used to suggest “within my country” for new trips, which skips passport, insurance and adapter reminders.' }),
         h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', class: 'check', name: 'companion', checked: prefs.companion, onChange: (e) => setPrefs({ companion: e.target.checked }) }), h('span', {}, h('strong', { text: 'Travel companion' }), h('span', { class: 'muted small', text: 'Mascot tips and reactions. Turn off to hide them everywhere.' }))),
         h('div', { class: 'row-between' }, h('span', {}, h('strong', { text: 'Dismissed tips' }), h('span', { class: 'muted small block', text: `${prefs.dismissed.length} hidden` })), button({ label: 'Show them again', variant: 'ghost', key: 'reset-tips', onClick: () => { setPrefs({ dismissed: [] }); toast('Tips will show again.'); ctx.refresh(); } })),
       ),

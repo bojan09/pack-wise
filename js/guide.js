@@ -142,7 +142,10 @@ export function groupSections(places) {
 // Outbound links only: opened by the user in a new tab, never fetched by the app.
 export const osmSearchUrl = (text) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(text)}`;
 export const mapSearchUrl = (place, dest) => osmSearchUrl(`${place.name}, ${dest.name}, ${dest.country}`);
-export const googleMapsUrl = (place, dest) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.name}, ${dest.name}, ${dest.country}`)}`;
+export const googleMapsUrl = (place, dest) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([place.name, dest.name, dest.country].filter(Boolean).join(', '))}`;
+/** Search links for a destination the catalog does not cover: ordinary web searches, nothing is claimed. */
+export const wikipediaTextUrl = (text) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(text)}`;
+export const thingsToDoUrl = (text) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`things to do near ${text}`)}`;
 export const wikipediaSearchUrl = (place, dest) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${place.name} ${dest.name}`)}`;
 
 export function getPlace(catalog, ref) {

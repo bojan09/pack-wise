@@ -117,7 +117,12 @@ export const BUILTIN_TEMPLATES = [
  * @param {{type?: string, style?: string, days?: number, travelers?: number, bagKinds?: string[], season?: string, conditions?: string[]}} opts
  * @returns {Array<{category:string,name:string,target:number,essential:boolean}>}
  */
-export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], season = '', conditions = [] } = {}) {
+/** Chores and items that only make sense when crossing a border. Used to trim lists for domestic trips. */
+export const ABROAD_ONLY_TASKS = ['Buy travel insurance', 'Notify bank about travel'];
+export const ABROAD_ONLY_ITEMS = ['Travel adapter', 'Travel insurance details'];
+export const isAbroadOnlyTask = (title) => ABROAD_ONLY_TASKS.includes(title);
+
+export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], season = '', conditions = [], scope = '' } = {}) {
   const d = clamp(Math.round(days || defaultDays(type)), 1, 60);
   const compact = bagKinds.length > 0 && bagKinds.every((k) => k === 'backpack' || k === 'carry-on');
   const carryOnOnly = bagKinds.length > 0 && bagKinds.every((k) => k === 'carry-on');
@@ -127,6 +132,7 @@ export function generatePackingList({ type = 'custom', style, days, travelers = 
   // chosen conditions win; without any, the season supplies a sensible default
   const conds = conditions.length ? conditions : SEASON_DEFAULT_CONDITIONS[season] || [];
   const camping = (style || type) === 'camping';
+  const domestic = scope === 'domestic';
 
   let jacket = 'Jacket';
   if (conds.includes('cold') || conds.includes('snowy')) jacket = 'Warm jacket';
@@ -147,7 +153,7 @@ export function generatePackingList({ type = 'custom', style, days, travelers = 
     it('electronics', 'Phone charger', 1, true),
     it('electronics', 'Travel adapter', 1),
     it('electronics', 'Headphones', 1),
-    it('documents', 'ID / Passport', 1, true),
+    it('documents', domestic ? 'ID card / driving licence' : 'ID / Passport', 1, true),
     it('documents', 'Tickets / booking confirmations', 1, true),
     it('documents', 'Travel insurance details', 1),
     it('essentials', 'Wallet, cards & some cash', 1, true),
@@ -170,7 +176,7 @@ export function generatePackingList({ type = 'custom', style, days, travelers = 
   const specificFootwear = extras.some((e) => /shoes|boots/i.test(e.name));
   const seen = new Set();
   const out = [];
-  for (const item of [...base.filter((b) => !(specificFootwear && b.name === 'Comfortable shoes')), ...extras]) {
+  for (const item of [...base.filter((b) => !(specificFootwear && b.name === 'Comfortable shoes') && !(domestic && ABROAD_ONLY_ITEMS.includes(b.name))), ...extras]) {
     const key = `${item.category}|${item.name.toLowerCase()}`;
     if (seen.has(key)) continue; // deduplicate
     seen.add(key);
@@ -179,14 +185,15 @@ export function generatePackingList({ type = 'custom', style, days, travelers = 
   return out;
 }
 
-export function generateTasks({ transport = '' } = {}) {
+export function generateTasks({ transport = '', scope = '' } = {}) {
+  const domestic = scope === 'domestic';
   const before = [
-    'Check passport / ID validity',
+    domestic ? 'Check your ID is valid' : 'Check passport / ID validity',
     'Confirm accommodation booking',
     'Download offline maps',
-    'Buy travel insurance',
+    ...(domestic ? [] : ['Buy travel insurance']),
     'Check the weather forecast',
-    'Notify bank about travel',
+    ...(domestic ? [] : ['Notify bank about travel']),
   ];
   if (transport === 'flight') before.unshift('Online check-in & boarding pass');
   if (transport && transport !== 'car') before.splice(1, 0, 'Book airport / station transfer');

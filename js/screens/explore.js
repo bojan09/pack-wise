@@ -5,7 +5,8 @@ import { icon } from '../ui/icons.js';
 import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { companionBubble } from '../ui/bubble.js';
 import { CATALOG } from '../data/catalog.js';
-import { ADMISSION, KINDS, availableFilters, citiesInCountry, filterPlaces, groupSections, googleMapsUrl, mapSearchUrl, matchDestination, osmSearchUrl, refId, wikipediaSearchUrl } from '../guide.js';
+import { ADMISSION, KINDS, availableFilters, citiesInCountry, filterPlaces, groupSections, googleMapsUrl, mapSearchUrl, matchDestination, osmSearchUrl, refId, thingsToDoUrl, wikipediaSearchUrl, wikipediaTextUrl } from '../guide.js';
+import { customPlaceDialog } from './customPlace.js';
 import { exploreMessage } from '../companion.js';
 import { getPrefs } from '../prefs.js';
 import { getTrip, tripEntries } from '../selectors.js';
@@ -73,17 +74,24 @@ export function ExploreScreen(ctx) {
     );
   }
 
-  function noGuide(asked, why) {
+  function noGuide(asked, why, stops = []) {
+    const searchStops = (stops.length ? stops : asked ? [asked] : []).slice(0, 3);
     return h(
       'div',
       { class: 'screen-block' },
       emptyState({
-        title: why === 'country' ? 'Pick a city' : `No verified guide for “${asked}” yet`,
-        text: why === 'country' ? 'A whole country is too big to guess at. These cities have a guide:' : 'PackWise only lists places it has reviewed, and it does not make guesses. These destinations are covered today:',
+        title: why === 'country' ? 'Pick a city' : `No built-in guide for “${asked}” yet`,
+        text: why === 'country' ? 'A whole country is too big to guess at. These cities have a guide:' : 'PackWise only lists places it has reviewed, so smaller towns and trails are not covered yet. You can still plan this trip here:',
+        showCompanion: false,
       }),
+      why === 'country' ? null : h('section', { class: 'card own-places' },
+        h('h2', { class: 'card-title', text: 'Plan it yourself' }),
+        h('p', { class: 'muted small', text: 'Add the places you already know about. They go into My Guide, where you can give them days and get packing ideas, such as walking shoes for a hike.' }),
+        h('div', { class: 'plan-actions' }, button({ label: 'Add your own place', icon: 'plus', variant: 'primary', key: 'add-own', onClick: () => customPlaceDialog({ store, tripId }) }), button({ label: 'Open My Guide', icon: 'heart', variant: 'secondary', href: `#/trip/${tripId}/guide` })),
+        searchStops.length ? h('div', { class: 'search-links' }, h('p', { class: 'muted small', text: 'Look around (opens a search in a new tab; PackWise does not vouch for the results):' }), searchStops.map((s) => h('div', { class: 'search-row' }, h('strong', { text: s }), h('a', { class: 'link', href: thingsToDoUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 14 }), 'Things to do on Google Maps', h('span', { class: 'sr-only', text: ` near ${s} (opens in a new tab)` })), h('a', { class: 'link', href: osmSearchUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('pin', { size: 14 }), 'OpenStreetMap', h('span', { class: 'sr-only', text: ` search for ${s} (opens in a new tab)` })), h('a', { class: 'link', href: wikipediaTextUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 14 }), 'Wikipedia', h('span', { class: 'sr-only', text: ` search for ${s} (opens in a new tab)` }))))) : null),
+      h('h2', { class: 'section-title', text: 'Or browse a covered destination' }),
       coveredList(),
       h('p', { class: 'muted small center', text: `Coverage: ${CATALOG.destinations.length} destinations in ${CATALOG.countries.length} countries.` }),
-      asked ? h('div', { class: 'center' }, h('a', { class: 'link', href: osmSearchUrl(asked), target: '_blank', rel: 'noopener noreferrer' }, icon('pin', { size: 14 }), 'Search the map for this place', h('span', { class: 'sr-only', text: ' (opens in a new tab)' }))) : null,
     );
   }
 
@@ -130,7 +138,7 @@ export function ExploreScreen(ctx) {
           conflict
             ? h('div', { class: 'banner banner-warn' }, icon('alert', { size: 18 }), h('span', { text: `Your trip says “${asked}”, but the guide covers ${conflict.destination.name}, ${conflict.destination.country}. These are different places, so nothing is shown automatically.` }), h('a', { class: 'link', href: `#/trip/${tripId}/explore?dest=${conflict.destination.id}`, text: `Show ${conflict.destination.name}, ${conflict.destination.country}` }))
             : null,
-          why === 'country' ? extra : noGuide(asked, why),
+          why === 'country' ? extra : noGuide(asked, why, match.unmatched),
           disclaimer(),
         );
       }

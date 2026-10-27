@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 2; // v2 adds guide `entries` (saved places / dishes per trip)
-export const APP_VERSION = '1.5.0';
+export const SCHEMA_VERSION = 3; // v2 added guide `entries`; v3 adds user-written `custom` entries (label / sub / type)
+export const APP_VERSION = '1.6.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -39,6 +39,12 @@ export const CONDITIONS = [
   { id: 'rainy', label: 'Rainy', icon: 'rain' },
   { id: 'snowy', label: 'Snowy', icon: 'winter' },
   { id: 'windy', label: 'Windy', icon: 'wind' },
+];
+
+/** Where the trip goes relative to the traveler's home country. Domestic trips skip abroad-only chores. */
+export const TRIP_SCOPES = [
+  { id: 'abroad', label: 'Abroad' },
+  { id: 'domestic', label: 'Within my country' },
 ];
 
 export const TRANSPORTS = [
@@ -87,6 +93,7 @@ export const LIMITS = {
 const ids = (list) => list.map((x) => x.id);
 const TRIP_TYPE_IDS = ids(TRIP_TYPES);
 const TRANSPORT_IDS = ids(TRANSPORTS);
+const SCOPE_IDS = ids(TRIP_SCOPES);
 const SEASON_IDS = ids(SEASONS);
 const CONDITION_IDS = ids(CONDITIONS);
 // pre-1.1.1 data used a single `climate` value
@@ -152,6 +159,9 @@ export function normalizeCategory(v) {
   return PRESET_IDS.includes(lower) ? lower : text;
 }
 
+/** Preset category id, or 'misc' for custom ones: drives the category color (data-cat) everywhere. */
+export const categoryKey = (id) => (CATEGORY_PRESETS.some((c) => c.id === id) ? id : 'misc');
+
 export function categoryMeta(id) {
   const preset = CATEGORY_PRESETS.find((c) => c.id === id);
   return preset || { id, label: id, icon: 'box' };
@@ -179,6 +189,7 @@ export function normalizeTrip(raw) {
     startDate,
     endDate,
     transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
+    scope: enumOr(raw.scope, SCOPE_IDS, ''), // '' = not chosen (older trips): treated like abroad
     travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
     season: enumOr(raw.season, SEASON_IDS, ''),
     conditions: normalizeConditions(raw.conditions ?? LEGACY_CLIMATE[raw.climate]),
@@ -269,7 +280,17 @@ export function normalizeTemplate(raw) {
 }
 
 /** Guide entries: a saved place or dish (or, later, a day plan slot) belonging to one trip. */
-export const ENTRY_KINDS = ['place', 'food'];
+export const ENTRY_KINDS = ['place', 'food', 'custom'];
+
+/** Place types a user can give their own place; kept in step with guide.js KINDS by a test. '' = other. */
+export const CUSTOM_TYPES = ['history', 'museum', 'religious', 'street', 'park', 'viewpoint', 'water', 'nature'];
+
+/** Stable ref for a user-written place: derived from its name so adding the same name twice can't duplicate. */
+export function customRef(label) {
+  let h = 5381;
+  for (const ch of String(label).trim().toLowerCase()) h = ((h * 33) ^ ch.codePointAt(0)) >>> 0;
+  return `c-${h.toString(36)}`;
+}
 
 /** Deterministic id: one entry per (trip, kind, catalog item), so saving twice can never duplicate. */
 export const entryId = (tripId, kind, refId) => `${tripId}:${kind}:${refId}`;
@@ -278,6 +299,7 @@ const isRef = (v) => typeof v === 'string' && /^[a-z0-9][a-z0-9/_.-]{0,79}$/.tes
 
 export function normalizeEntry(raw) {
   if (!isObj(raw) || !isId(raw.tripId) || !ENTRY_KINDS.includes(raw.kind) || !isRef(raw.refId)) return null;
+  if (raw.kind === 'custom' && !cleanText(raw.label, 80)) return null; // a custom place without a name is meaningless
   const createdAt = cleanIso(raw.createdAt) || nowIso();
   return {
     id: entryId(raw.tripId, raw.kind, raw.refId),
@@ -287,6 +309,9 @@ export function normalizeEntry(raw) {
     saved: raw.saved === true,
     tried: raw.tried === true,
     note: cleanMultiline(raw.note, 300),
+    label: raw.kind === 'custom' ? cleanText(raw.label, 80) : '',
+    sub: raw.kind === 'custom' ? cleanText(raw.sub, 60) : '',
+    type: raw.kind === 'custom' && CUSTOM_TYPES.includes(raw.type) ? raw.type : '',
     day: Number.isInteger(raw.day) && raw.day >= 1 && raw.day <= 60 ? raw.day : null,
     order: Number.isFinite(raw.order) ? raw.order : 0,
     createdAt,
