@@ -30,6 +30,7 @@ async function seed(page) {
   await make('Barcelona', 'City', soon(60), soon(64), []);
   await make('Algarve', 'Beach', soon(40), soon(47), ['Checked']);
   await make('Belgrade, Serbia', 'City', soon(90), soon(94), []); // covered by the Explore / Taste guides
+  await page.evaluate(() => { const { store } = window.__packwise; const t = store.state.trips.find((x) => x.name === 'Belgrade, Serbia'); ['kalemegdan-park-fortress', 'nikola-tesla-museum', 'temple-of-saint-sava'].forEach((r) => store.setSaved(t.id, 'place', `belgrade/${r}`, true)); store.setSaved(t.id, 'food', 'cevapi', true); store.planEntry(t.id, 'place', 'belgrade/kalemegdan-park-fortress', 1); });
   await make('Italy Adventure', 'City', soon(7), soon(15), ['Checked']);
   await page.evaluate(() => {
     const { store } = window.__packwise;
@@ -43,13 +44,13 @@ async function seed(page) {
 }
 
 for (const [label, viewport, shots] of [
-  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'studio', 'explore', 'taste', 'templates', 'tasks', 'summary', 'settings']],
+  ['390x844', { width: 390, height: 844 }, ['welcome', 'dashboard', 'create', 'checklist', 'studio', 'explore', 'taste', 'guide', 'templates', 'tasks', 'summary', 'settings']],
   ['1440x900', { width: 1440, height: 900 }, ['dashboard', 'checklist', 'studio', 'explore', 'taste', 'templates', 'trips', 'settings']],
 ]) {
   const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
   const page = await ctx.newPage();
   const { id, guide } = await seed(page);
-  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips', studio: `/trip/${id}/studio`, templates: '/templates', explore: `/trip/${guide}/explore`, taste: `/trip/${guide}/taste` };
+  const routes = { welcome: '/welcome', dashboard: '/', create: '/trips/new', checklist: `/trip/${id}`, tasks: `/trip/${id}/tasks`, summary: `/trip/${id}/summary`, settings: '/settings', trips: '/trips', studio: `/trip/${id}/studio`, templates: '/templates', explore: `/trip/${guide}/explore`, taste: `/trip/${guide}/taste`, guide: `/trip/${guide}/guide` };
   for (const name of shots) {
     await page.goto(`${base}#${routes[name]}`);
     await page.waitForTimeout(500);

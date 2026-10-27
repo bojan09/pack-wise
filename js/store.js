@@ -503,7 +503,7 @@ export function createStore(adapter) {
     if (!saved) {
       if (!cur) return false;
       // keep the record only if it still carries something else the user wrote or ticked
-      if (cur.tried || cur.note) commit({ put: { entries: [{ ...touch(cur), saved: false }] } });
+      if (cur.tried || cur.note) commit({ put: { entries: [{ ...touch(cur), saved: false, day: null }] } });
       else commit({ remove: { entries: [id] } });
       return false;
     }
@@ -531,6 +531,55 @@ export function createStore(adapter) {
   }
   const setTried = (tripId, kind, refId, tried) => patchEntry(tripId, kind, refId, { tried: tried === true });
   const setNote = (tripId, kind, refId, note) => patchEntry(tripId, kind, refId, { note: String(note ?? '').trim() });
+
+  // ---- day plan (manual): `day` 1..60 or null (unplanned), `order` within the day
+  const savedEntry = (tripId, kind, refId) => { const e = find('entries', entryId(tripId, kind, refId)); return e?.saved ? e : null; };
+  const dayList = (tripId, day, skipId) => state.entries.filter((e) => e.tripId === tripId && e.saved && e.day === day && e.id !== skipId).sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
+
+  /** Put one saved entry on a day (or null = unplanned), at the end of that day. */
+  function planEntry(tripId, kind, refId, day) {
+    const cur = savedEntry(tripId, kind, refId);
+    if (!cur) return null;
+    const d = Number.isInteger(day) && day >= 1 && day <= 60 ? day : null;
+    if (cur.day === d) return cur;
+    const order = d === null ? 0 : dayList(tripId, d, cur.id).length;
+    const norm = normalizeEntry({ ...touch(cur), day: d, order });
+    if (!norm) return null;
+    commit({ put: { entries: [norm] } });
+    return norm;
+  }
+
+  /** Swap an entry with its neighbour in the same day (delta -1 = earlier, +1 = later). */
+  function moveEntry(tripId, kind, refId, delta) {
+    const cur = savedEntry(tripId, kind, refId);
+    if (!cur || cur.day === null) return false;
+    const list = dayList(tripId, cur.day);
+    const i = list.findIndex((e) => e.id === cur.id);
+    const j = i + (delta < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= list.length) return false;
+    [list[i], list[j]] = [list[j], list[i]];
+    const puts = list.map((e, n) => (e.order === n ? null : normalizeEntry({ ...touch(e), order: n }))).filter(Boolean);
+    if (puts.length) commit({ put: { entries: puts } });
+    return true;
+  }
+
+  /**
+   * Replace the day/order of many saved entries in ONE write (draft plan, clear plan, undo).
+   * @returns {{kind: string, refId: string, day: number|null, order: number}[]} the previous values, for undo
+   */
+  function setPlan(tripId, assignments) {
+    const prev = [];
+    const puts = [];
+    for (const a of assignments) {
+      const cur = savedEntry(tripId, a.kind, a.refId);
+      if (!cur) continue;
+      prev.push({ kind: cur.kind, refId: cur.refId, day: cur.day, order: cur.order });
+      const norm = normalizeEntry({ ...touch(cur), day: a.day, order: a.order });
+      if (norm) puts.push(norm);
+    }
+    if (puts.length) commit({ put: { entries: puts } });
+    return prev;
+  }
 
   const isSaved = (tripId, kind, refId) => Boolean(find('entries', entryId(tripId, kind, refId))?.saved);
 
@@ -614,6 +663,9 @@ export function createStore(adapter) {
     saveTripAsTemplate,
     setSaved,
     setTried,
+    planEntry,
+    moveEntry,
+    setPlan,
     setNote,
     isSaved,
     createReturnTrip,

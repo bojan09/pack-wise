@@ -19,8 +19,9 @@ export function pageHeader({ title, subtitle, back, actions = [], className = ''
 
 /** Places | Taste switcher shared by both guide pages. */
 export function guideTabs(tripId, active) {
-  const tab = (id, label, ic) => h('a', { class: `guide-tab${active === id ? ' is-active' : ''}`, href: `#/trip/${tripId}/${id === 'places' ? 'explore' : 'taste'}`, ...(active === id ? { 'aria-current': 'page' } : {}) }, icon(ic, { size: 16 }), label);
-  return h('nav', { class: 'guide-tabs', 'aria-label': 'Trip guide' }, tab('places', 'Places', 'compass'), tab('taste', 'Taste', 'utensils'));
+  const path = { places: 'explore', taste: 'taste', guide: 'guide' };
+  const tab = (id, label, ic) => h('a', { class: `guide-tab${active === id ? ' is-active' : ''}`, href: `#/trip/${tripId}/${path[id]}`, ...(active === id ? { 'aria-current': 'page' } : {}) }, icon(ic, { size: 16 }), label);
+  return h('nav', { class: 'guide-tabs', 'aria-label': 'Trip guide' }, tab('places', 'Places', 'compass'), tab('taste', 'Taste', 'utensils'), tab('guide', 'My Guide', 'heart'));
 }
 
 export const typeMeta = (type) => TRIP_TYPES.find((t) => t.id === type) || TRIP_TYPES[TRIP_TYPES.length - 1];

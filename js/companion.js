@@ -53,6 +53,17 @@ export function companionMessage({ screen = 'dashboard', trip, items, tasks, tri
  * Tip for the Explore page. `status` comes from matchDestination().
  * @returns {{id: string, text: string, mood: string}|null}
  */
+export function guideMessage({ saved = 0, planned = 0, hints = 0, dismissed = [], tripId = '' }) {
+  const gone = new Set(dismissed);
+  const list = [];
+  if (!saved) list.push({ id: `guide-empty:${tripId}`, text: 'Nothing here yet. Tap the heart on places and dishes, and they land here for you to arrange.', mood: 'happy' });
+  else {
+    if (hints > 0) list.push({ id: `guide-hints:${tripId}:${hints}`, text: `I have ${hints} optional packing ${hints === 1 ? 'idea' : 'ideas'} based on what you saved. Nothing is added unless you tap.`, mood: 'wave' });
+    if (!planned) list.push({ id: `guide-plan:${tripId}`, text: 'Want a head start? I can sketch a draft day plan you can rearrange. It has no times or routes.', mood: 'happy' });
+  }
+  return list.find((m) => !gone.has(m.id)) || null;
+}
+
 export function tasteMessage({ status, countryLabel = '', asked = '', saved = 0, dismissed = [] }) {
   const gone = new Set(dismissed);
   const list = [];

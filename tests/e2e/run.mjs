@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.4.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.5.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -444,7 +444,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
     assert.deepEqual(bad, [], `a11y issues on ${route}`);
   };
   const id = (await tripState(page)).trips[0].id;
-  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/taste`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
+  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/taste`, `/trip/${id}/guide`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
 });
 
 await test('reduced motion disables animations; page still usable', async ({ page }) => {
@@ -1500,7 +1500,7 @@ await test('dark theme: every screen renders without overflow and with readable 
   await skipWelcome(page);
   await createTrip(page);
   const id = await firstTrip(page);
-  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['taste', `/trip/${id}/taste`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
+  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['taste', `/trip/${id}/taste`], ['guide', `/trip/${id}/guide`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
     await page.goto(`${BASE}#${route}`);
     await page.waitForTimeout(200);
     const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bg: getComputedStyle(document.body).backgroundColor }));
@@ -2037,7 +2037,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.4.0']);
+  assert.deepEqual(keys, ['packwise-v1.5.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2077,7 +2077,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.4.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.5.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2333,6 +2333,223 @@ await test('taste: reduced motion and offline with saved dishes', async ({ page,
   await page.goto(tastePath(id));
   await page.waitForSelector('.food-card');
   assert.ok(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.place-grid')).animationDuration)) < 0.01);
+}, { sw: true });
+
+
+// ============================================================ PHASE 5 (discovery): My Trip Guide & packing integration
+const guidePath = (id) => `${BASE}#/trip/${id}/guide`;
+const nonGuide = (st) => JSON.stringify(['trips', 'bags', 'items', 'tasks'].map((k) => [...st[k]].sort((a, b) => a.id.localeCompare(b.id))));
+const rowsText = (page) => page.locator('.guide-row strong').allInnerTexts();
+
+await test('guide: empty state, entry points, tabs; nothing saved means nothing invented', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await page.goto(`${BASE}#/trip/${id}`);
+  await page.click('button[aria-label="Trip actions"]');
+  await page.click('text=My trip guide');
+  await page.waitForSelector('text=Your guide is empty');
+  assert.ok(page.url().endsWith(`/trip/${id}/guide`));
+  assert.equal(await page.locator('.guide-row').count(), 0);
+  assert.equal(await page.locator('.guide-tab[aria-current=page]').innerText(), 'My Guide');
+  assert.deepEqual(await page.locator('.guide-tab').allInnerTexts(), ['Places', 'Taste', 'My Guide']);
+  await page.click('.guide-tab:has-text("Places")');
+  await page.waitForSelector('.place-card');
+  await page.goto(`${BASE}#/trip/${id}/summary`);
+  await page.click('a:has-text("My trip guide")');
+  await page.waitForSelector('text=Your guide is empty');
+});
+
+await test('guide: saved places and dishes appear grouped by interest, remove is undoable, stale items are flagged', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  for (const n of ['Knez Mihailova Street', 'Nikola Tesla Museum', 'Temple of Saint Sava']) await page.click(`.save-btn[aria-label^="Save ${n}"]`);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  await page.click('.save-btn[aria-label^="Add Ćevapi"]');
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  assert.deepEqual(await page.locator('.guide-section h2').allInnerTexts(), ['Free to Explore', 'Worth the Ticket', 'Check Admission First', 'Street Food & Snacks']);
+  assert.equal((await rowsText(page)).length, 4);
+  assert.match(await page.locator('.dest-card').innerText(), /3 places · 1 dish/);
+  assert.equal(await page.locator('.guide-row[data-ref="place:belgrade/knez-mihailova-street"] .adm-tag').innerText(), 'Free area');
+  // remove + undo restores save and keeps it a single record
+  await page.click('button[aria-label^="Remove Nikola Tesla Museum"]');
+  assert.equal((await rowsText(page)).length, 3);
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForFunction(() => document.querySelectorAll('.guide-row').length === 4);
+  assert.equal((await tripState(page)).entries.filter((e) => e.refId === 'belgrade/nikola-tesla-museum').length, 1);
+  // an item that left the catalog is still shown, flagged and removable
+  await page.evaluate((tid) => window.__packwise.store.setSaved(tid, 'place', 'belgrade/removed-from-catalog', true), id);
+  await page.waitForSelector('text=No longer in the guide');
+  assert.equal(await page.locator('.guide-row.is-missing select').count(), 0);
+  await page.click('button[aria-label^="Remove belgrade/removed-from-catalog"]');
+  assert.equal(await page.locator('.guide-row.is-missing').count(), 0);
+});
+
+await test('guide: manual day plan with keyboard ordering persists; draft plan is labelled, undoable and has no times', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia', start: '2027-05-01', end: '2027-05-03' });
+  const id = await firstTrip(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const b = CATALOG.destinations.find((d) => d.id === 'belgrade');
+  await page.evaluate(({ tid, refs }) => refs.forEach((r) => window.__packwise.store.setSaved(tid, 'place', r, true)), { tid: id, refs: b.places.slice(0, 5).map((p) => `belgrade/${p.id}`) });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  await page.click('.chip:has-text("By day")');
+  assert.deepEqual(await page.locator('.guide-section h2').allInnerTexts(), ['Unplanned', 'Day 1', 'Day 2', 'Day 3'], 'one slot per trip day');
+  assert.match(await page.locator('.dest-card').innerText(), /no times, routes or travel durations/);
+  // manual: put two items on Day 2 using the keyboard-accessible select
+  const [n0, n1] = b.places.slice(0, 2).map((p) => p.name);
+  await page.selectOption(`select[aria-label="Day for ${n0}"]`, '2');
+  await page.selectOption(`select[aria-label="Day for ${n1}"]`, '2');
+  const day2 = () => page.evaluate(() => [...document.querySelectorAll('.guide-section')].find((s) => s.querySelector('h2').textContent === 'Day 2').querySelectorAll('.guide-row strong').length && [...[...document.querySelectorAll('.guide-section')].find((s) => s.querySelector('h2').textContent === 'Day 2').querySelectorAll('.guide-row strong')].map((e) => e.textContent));
+  assert.deepEqual(await day2(), [n0, n1]);
+  await page.focus(`button[aria-label="Move ${n1} earlier"]`);
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await day2(), [n1, n0]);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-key')), `up-place:belgrade/${b.places[1].id}`, 'focus survives the re-render');
+  await page.evaluate(() => window.__packwise.store.flush()); // let the queued write land before reloading
+  await reloadSettled(page);
+  await page.click('.chip:has-text("By day")');
+  assert.deepEqual(await day2(), [n1, n0], 'order persists across reload');
+  // draft plan: fills only the unplanned, undo restores exactly
+  const before = (await tripState(page)).entries.map((e) => [e.refId, e.day, e.order]).sort();
+  await page.click('button:has-text("Suggest a draft plan")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.every((e) => e.day));
+  const text = await page.locator('.guide-screen').innerText();
+  assert.ok(!/\b\d{1,2}:\d{2}\b|\bminutes?\b|\bkm\b/i.test(text), 'no times or distances');
+  assert.equal(await page.locator('.guide-section:has(h2:text-is("Unplanned")) .guide-row').count(), 0);
+  const mid = (await tripState(page)).entries;
+  assert.ok(mid.filter((e) => e.refId.endsWith(b.places[0].id) || e.refId.endsWith(b.places[1].id)).every((e) => e.day === 2), 'manual picks untouched by the draft');
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForFunction((n) => window.__packwise.store.state.entries.filter((e) => !e.day).length === n, 3);
+  assert.deepEqual((await tripState(page)).entries.map((e) => [e.refId, e.day, e.order]).sort(), before);
+  // clear plan keeps saved items
+  await page.click('button:has-text("Clear day plan")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.every((e) => !e.day));
+  assert.equal((await tripState(page)).entries.filter((e) => e.saved).length, 5);
+});
+
+await test('guide: packing ideas are optional, deduplicated, explicit to add, and never change the list on their own', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const b = CATALOG.destinations.find((d) => d.id === 'belgrade');
+  const nat = b.places.find((p) => p.kind === 'nature');
+  const gated = b.places.find((p) => p.admission === 'paid');
+  // the city template already packs shoes and a bottle, so those ideas must NOT be offered; remove them to see the ideas
+  await page.goto(guidePath(id));
+  await page.evaluate(({ tid, refs }) => refs.forEach((r) => window.__packwise.store.setSaved(tid, 'place', r, true)), { tid: id, refs: [nat, gated].map((p) => `belgrade/${p.id}`) });
+  await page.waitForSelector('.pack-hints');
+  assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Comfortable walking shoes'), 'already on the packing list, so not suggested');
+  assert.match(await page.locator('.pack-hints').innerText(), /already look covered/);
+  await page.evaluate((tid) => { const st = window.__packwise.store; st.state.items.filter((i) => i.tripId === tid && /shoe|bottle/i.test(i.name)).forEach((i) => st.deleteItem(i.id)); }, id);
+  await page.waitForSelector('.hint:has-text("Comfortable walking shoes")');
+  const packing0 = nonGuide(await tripState(page));
+  await page.evaluate(({ tid, refs }) => refs.forEach((r) => window.__packwise.store.setSaved(tid, 'place', r, true)), { tid: id, refs: [nat, gated].map((p) => `belgrade/${p.id}`) });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.pack-hints');
+  assert.equal(nonGuide(await tripState(page)), packing0, 'saving places and opening the guide changes nothing');
+  assert.match(await page.locator('.pack-hints').innerText(), /Nothing is added to your packing list unless you tap/);
+  const titles = await page.locator('.hint strong').allInnerTexts();
+  assert.ok(titles.includes('Comfortable walking shoes') && titles.includes('Refillable water bottle'));
+  assert.ok(titles.some((t) => /^Check entry rules for 1 place$/.test(t)));
+  assert.equal(await page.locator('.hint:has-text("Check entry rules") button:has-text("Add to packing list")').count(), 0, 'reminders are not items');
+  // explicit add: exactly one item, undoable, then deduplicated
+  const itemsBefore = (await tripState(page)).items.length;
+  await page.click('.hint:has-text("Comfortable walking shoes") button:has-text("Add to packing list")');
+  await page.waitForFunction((n) => window.__packwise.store.state.items.length === n + 1, itemsBefore);
+  assert.equal((await tripState(page)).items.filter((i) => i.name === 'Comfortable walking shoes').length, 1);
+  await page.waitForFunction(() => ![...document.querySelectorAll('.hint strong')].some((e) => e.textContent === 'Comfortable walking shoes'));
+  assert.match(await page.locator('.pack-hints').innerText(), /already look covered/);
+  await page.click('.toasts button:has-text("Undo")');
+  await page.waitForFunction((n) => window.__packwise.store.state.items.length === n, itemsBefore);
+  // "Not now" hides it and survives reload; "Show hidden" brings it back
+  await page.click('button[aria-label="Hide suggestion: Refillable water bottle"]');
+  assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Refillable water bottle'));
+  await reloadSettled(page);
+  await page.waitForSelector('.pack-hints');
+  assert.ok(!(await page.locator('.hint strong').allInnerTexts()).includes('Refillable water bottle'));
+  await page.click('button:has-text("Show 1 hidden")');
+  assert.ok((await page.locator('.hint strong').allInnerTexts()).includes('Refillable water bottle'));
+  // an item already on the packing list is never suggested
+  await page.evaluate((tid) => window.__packwise.store.addItem(tid, { name: 'Sturdy hiking boots', category: 'clothing', target: 1 }), id);
+  await page.waitForFunction(() => ![...document.querySelectorAll('.hint strong')].some((e) => /walking shoes/.test(e.textContent)));
+});
+
+await test('guide: backup/restore, duplicate and delete cover days and notes; returning to packing loses nothing', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Zagreb', start: '2027-05-01', end: '2027-05-03' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  const first = await page.locator('.place-card h3').first().innerText();
+  await page.click(`.save-btn[aria-label^="Save ${first}"]`);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  await page.click('.save-btn[aria-label^="Add Fritule"]');
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  await page.selectOption(`select[aria-label="Day for ${first}"]`, '3');
+  await page.selectOption('select[aria-label="Day for Fritule"]', '1');
+  const packing = nonGuide(await tripState(page));
+  const before = await tripState(page);
+  await page.goto(`${BASE}#/trip/${id}`); // back to Pack
+  await page.waitForSelector('.category-card');
+  assert.equal(nonGuide(await tripState(page)), packing);
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 2);
+  assert.deepEqual((await tripState(page)).entries, before.entries);
+  const copy = await page.evaluate((tid) => window.__packwise.store.duplicateTrip(tid), id);
+  const copied = (await tripState(page)).entries.filter((e) => e.tripId === copy.id).map((e) => [e.day]).sort();
+  assert.deepEqual(copied, [[1], [3]], 'a duplicated trip keeps its day plan');
+  await page.goto(guidePath(copy.id));
+  await page.waitForSelector('.guide-row');
+  assert.equal(await page.locator('.guide-row').count(), 2);
+});
+
+await test('guide: accessible names, 360px layout, by-day view and offline editing', async ({ page, ctx }) => {
+  await skipWelcome(page);
+  await page.goto(BASE);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await createTrip(page, { dest: 'Belgrade, Serbia', start: '2027-05-01', end: '2027-05-04' });
+  const id = await firstTrip(page);
+  const { CATALOG } = await import('../../js/data/catalog.js');
+  const b = CATALOG.destinations.find((d) => d.id === 'belgrade');
+  await page.evaluate(({ tid, refs }) => { refs.forEach((r) => window.__packwise.store.setSaved(tid, 'place', r, true)); window.__packwise.store.setSaved(tid, 'food', 'cevapi', true); return window.__packwise.store.flush(); }, { tid: id, refs: b.places.slice(0, 4).map((p) => `belgrade/${p.id}`) });
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal overflow at 360px');
+  assert.equal(await page.locator('h1').count(), 1);
+  const issues = await page.evaluate(() => [...document.querySelectorAll('#view button, #view a[href], #view select')].filter((el) => !(el.getAttribute('aria-label') || el.textContent || '').trim()).map((e) => e.outerHTML.slice(0, 80)));
+  assert.deepEqual(issues, []);
+  await page.click('.chip:has-text("By day")');
+  assert.equal(await page.locator('[aria-label="Arrange by"] .chip[aria-pressed=true]').innerText(), 'By day');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  // offline: lazy screen, plan module and catalogs come from the cache; edits persist
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.guide-row');
+  await page.selectOption('select[aria-label="Day for Ćevapi"]', '2');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.refId === 'cevapi' && e.day === 2));
+  await ctx.setOffline(false);
+  await reloadSettled(page);
+  assert.equal((await tripState(page)).entries.find((e) => e.refId === 'cevapi').day, 2);
 }, { sw: true });
 
 

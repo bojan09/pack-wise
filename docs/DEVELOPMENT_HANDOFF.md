@@ -54,6 +54,16 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## Discovery plan, Phase 5: My Trip Guide & packing integration (v1.5.0)
+
+- `js/plan.js` (pure): `resolveGuide` (join saved entries with catalogs; entries whose item left the catalog stay, flagged `missing`), `groupByInterest`, `groupByDay`, `dayCount`, `draftPlan`, `packHints`. `js/screens/guide.js` (lazy, precached). No schema change: uses `entries.day` / `entries.order`.
+- Store: `planEntry` (end of a day), `moveEntry` (swap with neighbour), `setPlan` (batch, returns previous values so a draft / clear / undo is one write). Unsaving clears `day`.
+- Day plan is manual-first. The draft groups by the catalog `area` *label* (not distance), max 3 places per day, one dish per day; never touches items that already have a day. No times/durations/routes anywhere (tested).
+- Packing hints are pure suggestions with `have` (already covered by an item name regex) and `add` (null for reminders). They never write; the only write is the explicit button (undoable). Dismissals are stored in prefs as `hint:<tripId>:<id>`; they are not part of backups.
+- Entry points: guide tabs, checklist menu, trips action sheet, summary.
+- Tests: unit `tests/unit/plan.test.js`; e2e 6 `guide:` checks (+ guide in a11y/overflow/dark sweeps).
+- Known gaps: no export of the guide as text/print; hint dismissals are device-local; day plan cannot hold a place twice; no drag-and-drop (buttons + select by design, for keyboard/screen readers).
+
 ## Discovery plan, Phase 4: Taste the Destination (v1.4.0)
 
 - `js/data/food.js` (editorial; no venues, prices, alcohol, pronunciations), `js/taste.js` (pure: country scoping, diet/allergen/category filters, grouping), `js/screens/taste.js` (lazy, precached), `Places | Taste` tabs via `guideTabs()` in `screens/shared.js`.

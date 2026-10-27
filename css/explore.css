@@ -350,3 +350,143 @@
 .covered .chips-inner {
   flex-wrap: wrap;
 }
+
+/* ===================== My Trip Guide ===================== */
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-row {
+  --kind-a: #3fb8a8;
+  --kind-b: #1a7c74;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.guide-row-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--kind-a), var(--kind-b));
+  color: #fff;
+}
+
+.guide-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.guide-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.day-select {
+  width: auto;
+  min-width: 120px;
+  flex: 1 1 120px;
+  max-width: 200px;
+}
+
+.move-btns {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.is-dim {
+  opacity: 0.45;
+}
+
+.guide-row.is-missing {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.guide-note {
+  color: var(--muted);
+}
+
+.adm-tag-free { background: var(--tone-teal); color: var(--tone-teal-ink); }
+.adm-tag-paid { background: var(--tone-sand); color: var(--tone-sand-ink); }
+.adm-tag-check { background: var(--tone-coral); color: var(--tone-coral-ink); }
+
+.pack-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.hint:last-child {
+  border-bottom: 0;
+}
+
+.hint-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (min-width: 720px) {
+  .guide-row {
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+  }
+
+  .guide-row-actions {
+    grid-column: auto;
+    flex-wrap: nowrap;
+  }
+
+  .hint {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}

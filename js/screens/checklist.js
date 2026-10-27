@@ -65,6 +65,7 @@ export function ChecklistScreen(ctx) {
       title: trip.name,
       actions: [
         { id: 'explore', label: 'Explore destination', icon: 'compass' },
+        { id: 'guide', label: 'My trip guide', icon: 'heart' },
         { id: 'studio', label: 'Packing Studio', icon: 'luggage' },
         { id: 'bags', label: 'Manage bags', icon: 'suitcase' },
         { id: 'tasks', label: 'Travel tasks', icon: 'tasks' },
@@ -81,6 +82,7 @@ export function ChecklistScreen(ctx) {
     });
     if (choice === 'studio') navigate(`/trip/${tripId}/studio`);
     else if (choice === 'explore') navigate(`/trip/${tripId}/explore`);
+    else if (choice === 'guide') navigate(`/trip/${tripId}/guide`);
     else if (choice === 'bags') manageBags(store, tripId);
     else if (choice === 'tasks') navigate(`/trip/${tripId}/tasks`);
     else if (choice === 'summary') navigate(`/trip/${tripId}/summary`);
