@@ -57,7 +57,7 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 ## v1.9.0: limits closed
 
 - **Scope change rewrites existing lists, on request**: `planScopeChange(scope, {tasks, items})` (pure, `templates.js`) plans add / remove / rename for generated reminders in both directions; `store.applyScopeChanges` / `undoScopeChanges` apply and revert them; `reviewScopeChange()` (`screens/shared.js`) shows a tick-list dialog after the edit form or the scope question banner. Nothing is changed without Apply; packed items, completed tasks and user-written entries are never touched.
-- **Phone navigation**: the bottom bar now has a tab for every destination (Home, Trips, Pack, Studio, Explore, Templates, Tasks, Settings) and scrolls sideways (`.nav-wrap` / `.nav-list`, edge fades via `data-more-left/right`, current tab auto-centred, focus scrolls into view). The More menu was removed. Desktop sidebar unchanged.
+- **Phone navigation**: an eight-tab sideways-scrolling bar was tried and rejected as too crowded; the bar is back to five tabs with a *More* menu (`screens/more.js`) holding Studio, Explore, Taste, My Guide, Templates and Settings. Desktop sidebar unchanged.
 
 ## v1.8.0: review fixes from a phone
 

@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.9.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.9.1'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -2075,7 +2075,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.9.0']);
+  assert.deepEqual(keys, ['packwise-v1.9.1']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2115,7 +2115,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.9.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.9.1', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2969,43 +2969,42 @@ await test('unsupported destination: friendly plan-it-yourself page, own places 
 });
 
 
-await test('mobile: every feature is a tab in a sideways-scrolling bottom bar that keeps the current tab in view; desktop sidebar has the same set', async ({ page }) => {
+await test('mobile: the More tab reaches every feature the desktop sidebar has; desktop shows Settings instead', async ({ page }) => {
   await skipWelcome(page);
   await createTrip(page, { dest: 'Belgrade, Serbia' });
   const id = await firstTrip(page);
-  const ALL = ['Home', 'Trips', 'Pack', 'Studio', 'Explore', 'Templates', 'Tasks', 'Settings'];
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}#/`);
-  const tabs = () => page.locator('.nav-item .nav-short').allInnerTexts();
-  assert.deepEqual(await tabs(), ALL, 'every destination is a tab on a phone');
-  assert.equal(await page.locator('.nav-item[data-nav=more]').count(), 0, 'no hidden "More" menu any more');
-  // it scrolls sideways, not the page, and the fade hints appear at the overflowing edge
-  const geo = await page.evaluate(() => { const l = document.querySelector('.nav-list'); return { scrolls: l.scrollWidth > l.clientWidth, page: document.documentElement.scrollWidth <= window.innerWidth, right: document.querySelector('.nav-wrap').dataset.moreRight }; });
-  assert.deepEqual([geo.scrolls, geo.page, geo.right], [true, true, 'true']);
-  // every tab is reachable by tapping (the bar scrolls it into view) and ends on the right screen
-  const targets = [['Trips', '/trips', 'h1'], ['Pack', `/trip/${id}`, '.category-card'], ['Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Templates', '/templates', 'h1'], ['Tasks', `/trip/${id}/tasks`, '.task-row'], ['Settings', '/settings', '[role=tab]'], ['Home', '/', 'h1']];
-  for (const [label, path, ready] of targets) {
-    await page.click(`.nav-item:has-text("${label}")`);
+  const visibleNav = () => page.evaluate(() => [...document.querySelectorAll('.nav-list li')].filter((li) => li.offsetParent !== null).map((li) => li.querySelector('.nav-short').textContent));
+  assert.deepEqual(await visibleNav(), ['Home', 'Trips', 'Pack', 'Tasks', 'More'], 'five bottom-bar tabs on a phone');
+  await page.click('.nav-item[data-nav=more]');
+  await page.waitForSelector('.more-list');
+  assert.ok(page.url().endsWith('#/more'));
+  assert.equal(await page.getAttribute('.nav-item[data-nav=more]', 'aria-current'), 'page');
+  const wanted = [['Packing Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Taste', `/trip/${id}/taste`, '.food-card'], ['My Guide', `/trip/${id}/guide`, '.guide-tab'], ['Templates', '/templates', 'h1'], ['Settings', '/settings', '[role=tab]']];
+  assert.deepEqual(await page.locator('.more-item strong').allInnerTexts(), wanted.map((w) => w[0]));
+  for (const [label, path, ready] of wanted) {
+    await page.goto(`${BASE}#/more`);
+    await page.click(`.more-item:has-text("${label}")`);
     await page.waitForSelector(ready);
-    assert.ok(page.url().endsWith(`#${path}`) || page.url().includes(path), `${label} -> ${page.url()}`);
-    await page.waitForFunction((n) => document.querySelector(`.nav-item[data-nav=${n}]`)?.getAttribute('aria-current') === 'page', label.toLowerCase());
-    const inView = await page.evaluate(() => { const a = document.querySelector('.nav-item[aria-current=page]').getBoundingClientRect(); return a.left >= -1 && a.right <= window.innerWidth + 1; });
-    assert.ok(inView, `${label} tab is fully on screen`);
+    assert.ok(page.url().includes(path), `${label} -> ${page.url()}`);
   }
-  // 44px-ish touch targets and labels at 360px
-  await page.setViewportSize({ width: 360, height: 740 });
-  const box = await page.evaluate(() => { const r = document.querySelector('.nav-item').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
-  assert.ok(box[0] >= 64 && box[1] >= 44, `tab size ${box}`);
-  // keyboard: Tab reaches a tab that is off screen and scrolls to it
-  await page.focus('.nav-item[data-nav=home]');
-  for (let n = 0; n < 7; n += 1) await page.keyboard.press('Tab');
-  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.nav), 'settings');
-  assert.ok(await page.evaluate(() => { const a = document.activeElement.getBoundingClientRect(); return a.right <= window.innerWidth + 1 && a.left >= -1; }), 'focused tab scrolled into view');
-  // desktop: the sidebar lists the same destinations, no scrolling
+  // while on a screen that lives in the More menu, the More tab stays highlighted
+  await page.goto(`${BASE}#/trip/${id}/studio`);
+  await page.waitForSelector('.stage');
+  assert.equal(await page.getAttribute('.nav-item[data-nav=more]', 'aria-current'), 'page');
+  // each More item works for a fresh install too (no trips): it sends you to create one instead of a dead end
+  await page.evaluate(() => window.__packwise.store.clearAll());
+  await page.goto(`${BASE}#/more`);
+  assert.equal(await page.locator('.more-item[href="#/trips/new"]').count(), 4);
+  // desktop: Settings is in the sidebar and More is hidden
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${BASE}#/`);
-  assert.deepEqual(await page.locator('.nav-item .nav-long').allInnerTexts(), ['Dashboard', 'My Trips', 'Packing List', 'Packing Studio', 'Explore', 'Templates', 'Travel Tasks', 'Settings']);
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.nav-list')).overflowX), 'visible');
+  const wide = await visibleNav();
+  assert.ok(wide.includes('Settings') && !wide.includes('More') && wide.includes('Explore') && wide.includes('Studio') && wide.includes('Templates'));
+  await page.click('.nav-item[data-nav=settings]');
+  await page.waitForSelector('[role=tab]');
+  assert.equal(await page.getAttribute('.nav-item[data-nav=settings]', 'aria-current'), 'page');
 });
 
 await test('precache list covers every runtime file and versions agree', async () => {

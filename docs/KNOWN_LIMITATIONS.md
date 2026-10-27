@@ -20,7 +20,7 @@ Honest list of what PackWise does **not** do, so nobody has to find out the hard
 ## Platform
 - **Storage** is IndexedDB in the browser. Clearing site data, private windows or low disk can erase trips; export a backup regularly (Settings → Data). There is no sync between devices.
 - Tested in **Chromium only** (Playwright). Safari/iOS and Firefox rendering, real-device install, haptics and screen readers (VoiceOver, NVDA, TalkBack) were not run by hand. Automated checks cover accessible names, headings, focus, contrast tokens and overflow at five viewport sizes.
-- The phone bottom bar scrolls sideways (8 tabs); the current tab is kept in view and edges fade when more tabs are off screen.
+- The phone bottom bar has five tabs (Home, Trips, Pack, Tasks, More). *More* opens a menu with Packing Studio, Explore, Taste, My Guide, Templates and Settings; the desktop sidebar lists everything directly.
 - **Offline**: the app shell, guides and your data work offline after the first load. Updates need one online visit; the update prompt appears when a new version is ready.
 - `content-visibility: auto` is used on long checklist rows; very old browsers ignore it and simply render everything.
 - Pointer drag-reorder is supported; the buttons, selects and Alt+Arrow keys are the keyboard/screen-reader path.

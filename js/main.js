@@ -24,17 +24,19 @@ import { PrintScreen } from './screens/print.js';
 import { TemplatesScreen } from './screens/templates.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SettingsScreen } from './screens/settings.js';
+import { MoreScreen } from './screens/more.js';
 import { WelcomeScreen } from './screens/welcome.js';
 
 const NAV = [
   { id: 'home', href: '#/', short: 'Home', long: 'Dashboard', icon: 'home' },
   { id: 'trips', href: '#/trips', short: 'Trips', long: 'My Trips', icon: 'suitcase' },
   { id: 'pack', href: '#/pack', short: 'Pack', long: 'Packing List', icon: 'pack' },
-  { id: 'studio', href: '#/studio', short: 'Studio', long: 'Packing Studio', icon: 'luggage' },
-  { id: 'explore', href: '#/explore', short: 'Explore', long: 'Explore', icon: 'compass' },
-  { id: 'templates', href: '#/templates', short: 'Templates', long: 'Templates', icon: 'template' },
+  { id: 'studio', href: '#/studio', short: 'Studio', long: 'Packing Studio', icon: 'luggage', desktopOnly: true },
+  { id: 'explore', href: '#/explore', short: 'Explore', long: 'Explore', icon: 'compass', desktopOnly: true },
+  { id: 'templates', href: '#/templates', short: 'Templates', long: 'Templates', icon: 'template', desktopOnly: true },
   { id: 'tasks', href: '#/tasks', short: 'Tasks', long: 'Travel Tasks', icon: 'tasks' },
-  { id: 'settings', href: '#/settings', short: 'Settings', long: 'Settings', icon: 'sliders' },
+  { id: 'settings', href: '#/settings', short: 'Settings', long: 'Settings', icon: 'sliders', desktopOnly: true },
+  { id: 'more', href: '#/more', short: 'More', long: 'More', icon: 'more', mobileOnly: true },
 ];
 
 /**
@@ -102,7 +104,7 @@ function buildShell() {
     'nav',
     { class: 'nav', 'aria-label': 'Main' },
     h('a', { class: 'nav-brand', href: '#/', 'aria-label': 'PackWise home' }, logoMark({ size: 34 }), h('span', {}, 'Pack', h('b', { text: 'Wise' }))),
-    h('div', { class: 'nav-wrap' }, h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', {}, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 20 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long })))))),
+    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : n.mobileOnly ? 'hide-sidebar' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 20 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
     h('div', { class: 'nav-foot' }, destinationArt('beach', { className: 'nav-foot-art' }), h('p', { text: 'Collect trips, not things.' })),
   );
   const banners = h('div', { class: 'banners' });
@@ -235,19 +237,10 @@ async function boot() {
     { path: '/studio', name: 'studio-home', nav: 'studio', screen: StudioRedirectScreen },
     { path: '/pack', name: 'pack', nav: 'pack', screen: PackRedirectScreen },
     { path: '/tasks', name: 'tasks-home', nav: 'tasks', screen: TasksRedirectScreen },
+    { path: '/more', name: 'more', nav: 'more', screen: MoreScreen },
     { path: '/settings', name: 'settings', nav: 'settings', screen: SettingsScreen },
     { path: '/404', name: 'notfound', nav: null, screen: NotFound },
   ];
-
-  // phone bottom bar: every destination is a tab; it scrolls sideways, keeps the current tab in view and fades at an overflowing edge
-  const navList = nav.querySelector('.nav-list');
-  const navWrap = nav.querySelector('.nav-wrap');
-  const navHints = () => {
-    navWrap.dataset.moreLeft = String(navList.scrollLeft > 4);
-    navWrap.dataset.moreRight = String(navList.scrollLeft + navList.clientWidth < navList.scrollWidth - 4);
-  };
-  navList.addEventListener('scroll', navHints, { passive: true });
-  window.addEventListener('resize', navHints);
 
   const router = createRouter({
     routes,
@@ -257,12 +250,11 @@ async function boot() {
     onRoute(route) {
       shell.dataset.chrome = route.chrome === false ? 'none' : 'full';
       nav.querySelectorAll('[data-nav]').forEach((a) => {
-        const active = a.dataset.nav === route.nav;
+        // on a phone Studio, Explore, Templates and Settings live in the More menu, so More stays highlighted there
+        const active = a.dataset.nav === route.nav || (a.dataset.nav === 'more' && ['studio', 'explore', 'templates', 'settings'].includes(route.nav));
         if (active) a.setAttribute('aria-current', 'page');
         else a.removeAttribute('aria-current');
-        if (active && navList.scrollWidth > navList.clientWidth) navList.scrollLeft = a.offsetLeft - (navList.clientWidth - a.offsetWidth) / 2; // instant, no animation to respect
       });
-      navHints();
     },
   });
 
