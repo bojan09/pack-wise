@@ -35,17 +35,17 @@
   --tone-teal: #dcf3ef;
   --tone-teal-ink: #176b64;
 
-  --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-xl: 24px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
   --shadow-sm: 0 1px 2px rgb(18 61 64 / 6%), 0 2px 8px rgb(18 61 64 / 5%);
   --shadow-md: 0 4px 12px rgb(18 61 64 / 8%), 0 12px 28px rgb(18 61 64 / 8%);
   --shadow-lg: 0 10px 30px rgb(18 61 64 / 14%), 0 24px 60px rgb(18 61 64 / 12%);
 
   --font: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, sans-serif;
-  --nav-h: 68px;
-  --gutter: 16px;
+  --nav-h: 58px;
+  --gutter: 14px;
   --ease: cubic-bezier(0.22, 0.8, 0.28, 1);
   --dur: 220ms;
   --safe-b: env(safe-area-inset-bottom, 0px);

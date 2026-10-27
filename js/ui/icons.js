@@ -60,7 +60,7 @@ const ICONS = {
 };
 
 /** @param {string} name  @param {{size?: number, class?: string}} [opts] */
-export function icon(name, { size = 20, class: cls = '' } = {}) {
+export function icon(name, { size = 18, class: cls = '' } = {}) {
   const paths = ICONS[name] || ICONS.box;
   return svg(
     'svg',

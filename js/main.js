@@ -77,7 +77,7 @@ function buildShell() {
     'nav',
     { class: 'nav', 'aria-label': 'Main' },
     h('a', { class: 'nav-brand', href: '#/', 'aria-label': 'PackWise home' }, logoMark({ size: 34 }), h('span', {}, 'Pack', h('b', { text: 'Wise' }))),
-    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 22 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
+    h('ul', { class: 'nav-list' }, NAV.map((n) => h('li', { class: n.desktopOnly ? 'hide-mobile' : '' }, h('a', { class: 'nav-item', href: n.href, 'data-nav': n.id }, icon(n.icon, { size: 20 }), h('span', { class: 'nav-short', text: n.short }), h('span', { class: 'nav-long', text: n.long }))))),
     h('div', { class: 'nav-foot' }, destinationArt('beach', { className: 'nav-foot-art' }), h('p', { text: 'Collect trips, not things.' })),
   );
   const banners = h('div', { class: 'banners' });

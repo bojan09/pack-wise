@@ -54,6 +54,10 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## Compact UI pass (v1.2.0)
+
+User feedback: the app felt zoomed in on phones. Controls, type, spacing, nav and radii were scaled down across all screens (buttons 46→38 px, nav 68→58 px, body 16→14.5 px, cards/tiles/steppers/chips tighter, studio stage shorter). Text inputs stay at 16 px on touch devices (`pointer: coarse`) because iOS Safari zooms into smaller inputs. Touch targets remain ≥ 28 px (steppers) / 32–38 px (buttons, chips). Verified: 60 e2e (no overflow at 5 viewports), screenshots refreshed.
+
 ## Phase 2.1 (season, weather, camping)
 
 - `trip.climate` is replaced by `trip.season` (`''|spring|summer|fall|winter`) and `trip.conditions` (subset of hot/warm/cool/cold/rainy/snowy/windy, canonical order). `normalizeTrip` maps legacy `climate` (warm→warm, mild→cool, cold→cold) when `conditions` is absent, so old backups still import; no schema bump needed.

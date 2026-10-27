@@ -4,7 +4,7 @@ import { icon } from './icons.js';
 import { companion } from './art.js';
 
 export function button({ label, icon: ic, variant = 'secondary', onClick, type = 'button', ariaLabel, key, className = '', disabled, href, iconAfter } = {}) {
-  const inner = [ic && !iconAfter ? icon(ic, { size: 18 }) : null, label ? h('span', { text: label }) : null, ic && iconAfter ? icon(ic, { size: 18 }) : null];
+  const inner = [ic && !iconAfter ? icon(ic, { size: 16 }) : null, label ? h('span', { text: label }) : null, ic && iconAfter ? icon(ic, { size: 16 }) : null];
   const props = {
     class: `btn btn-${variant} ${className}`.trim(),
     'aria-label': ariaLabel,
