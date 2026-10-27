@@ -38,7 +38,7 @@ export function SummaryScreen(ctx) {
       return h(
         'div',
         { class: 'screen summary-screen' },
-        h('div', { class: `celebrate${allPacked ? ' is-complete' : ''}` }, allPacked ? confetti() : null, h('div', { class: 'celebrate-stage' }, allPacked ? suitcase({ className: 'celebrate-case' }) : null, companion({ mood: 'camera', className: 'celebrate-mascot', label: 'PackWise traveler mascot' })), h('h1', { tabindex: '-1', text: allPacked ? 'All Packed!' : 'Almost there' }), h('p', { class: 'muted', text: allPacked ? `You’re ready for ${dest}!` : `Here’s how packing for ${dest} is going.` }), h('p', { class: 'muted small', text: tripSubtitle(trip) })),
+        h('div', { class: `celebrate${allPacked ? ' is-complete' : ''}` }, allPacked ? confetti() : null, h('div', { class: 'celebrate-stage', 'data-parallax': '0.06', 'data-parallax-max': '12' }, allPacked ? suitcase({ className: 'celebrate-case' }) : null, companion({ mood: 'camera', className: 'celebrate-mascot', label: 'PackWise traveler mascot' })), h('h1', { tabindex: '-1', text: allPacked ? 'All Packed!' : 'Almost there' }), h('p', { class: 'muted', text: allPacked ? `You’re ready for ${dest}!` : `Here’s how packing for ${dest} is going.` }), h('p', { class: 'muted small', text: tripSubtitle(trip) })),
         h(
           'ul',
           { class: 'card check-list' },

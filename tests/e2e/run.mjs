@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.2.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.2.1'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -673,11 +673,18 @@ await test('performance: 500-item trip renders checklist and studio quickly', as
   console.log(`       (500 items: checklist ${tChecklist} ms, studio ${tStudio} ms)`);
   assert.ok(tChecklist < 3000, `checklist took ${tChecklist}ms`);
   assert.ok(tStudio < 3000, `studio took ${tStudio}ms`);
-  // one tap on the checklist stays responsive with 500 rows
+  // one tap on the checklist stays responsive with 500 rows (measured in-page: Playwright's own scrolling/actionability waits are not app cost)
   await page.goto(`${BASE}#/trip/${id}`);
-  const t0 = Date.now();
-  await page.check('input[aria-label^="Perf item 0:"]');
-  assert.ok(Date.now() - t0 < 1500);
+  await page.waitForSelector('.category-card');
+  const tap = await page.evaluate(async () => {
+    const el = [...document.querySelectorAll('input.check')].find((i) => i.getAttribute('aria-label')?.startsWith('Perf item 0:'));
+    const t0 = performance.now();
+    el.click();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return Math.round(performance.now() - t0);
+  });
+  console.log(`       (one tap with 500 rows: ${tap} ms to next paint)`);
+  assert.ok(tap < 400, `tap took ${tap}ms`);
 });
 
 await test('checklist: reorder via drag, keyboard (Alt+Arrow) and dialog buttons; persists', async ({ page }) => {
@@ -1260,6 +1267,7 @@ await test('install help: prompt button, iOS instructions, installed event', asy
   await page.goto(`${BASE}#/settings?tab=about`);
   await page.waitForSelector('.install-box');
   assert.match(await page.locator('.install-box').innerText(), /Install from your browser menu/);
+  assert.ok(!/\bnull\b/.test(await page.locator('.install-box').innerText()), 'no stray "null" text');
   await page.evaluate(() => {
     window.__prompted = 0;
     const evt = new Event('beforeinstallprompt', { cancelable: true });
@@ -1291,14 +1299,14 @@ await test('offline files: verify, detect damage, repair, and still open offline
   await page.waitForFunction(() => navigator.serviceWorker.controller);
   await createTrip(page);
   await page.goto(`${BASE}#/settings?tab=about`);
-  await page.click('button:has-text("Check offline files")');
+  await page.click('button[aria-label="Check offline files"]');
   await page.waitForSelector('p:has-text("offline files are in place")');
   // damage the cache on purpose
   const victim = await page.evaluate(async () => { const c = await caches.open((await caches.keys())[0]); const url = new URL('js/store.js', location.href).href; const ok = await c.delete(url); return ok ? url : null; });
   assert.ok(victim);
-  await page.click('button:has-text("Check offline files")');
+  await page.click('button[aria-label="Check offline files"]');
   await page.waitForSelector('p:has-text("1 of")');
-  await page.click('button:has-text("Repair offline files")');
+  await page.click('button[aria-label="Repair offline files"]');
   await page.waitForSelector('p:has-text("repaired and verified")');
   assert.equal(await page.evaluate(async (u) => Boolean(await (await caches.open((await caches.keys())[0])).match(u)), victim), true);
   await ctx.setOffline(true);
@@ -1501,6 +1509,163 @@ await test('dark theme: every screen renders without overflow and with readable 
   }
 });
 
+
+// ============================================================ PHASE 3.1 (UI polish + parallax)
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const parseY = (t) => { const m = /matrix\(([^)]+)\)/.exec(t || ''); return m ? parseFloat(m[1].split(',')[5]) : 0; };
+const ty = (page, sel) => page.evaluate((q) => getComputedStyle(document.querySelector(q)).transform, sel).then(parseY);
+
+await test('parallax: hero art drifts smoothly with scroll, bounded, and stops under reduced motion', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page);
+  await page.setViewportSize({ width: 390, height: 520 });
+  await page.goto(`${BASE}#/`);
+  await page.waitForSelector('.hero-art');
+  await page.waitForTimeout(250);
+  const at0 = await ty(page, '.hero-art');
+  // jump-scroll and sample the easing: values must pass through intermediate positions
+  await page.evaluate(() => window.scrollTo(0, 220));
+  const samples = [];
+  for (let n = 0; n < 8; n++) { samples.push(await ty(page, '.hero-art')); await page.waitForTimeout(40); }
+  await page.waitForTimeout(500);
+  const settled = await ty(page, '.hero-art');
+  assert.notEqual(Math.round(settled * 10), Math.round(at0 * 10), 'hero art moved relative to its container');
+  assert.ok(Math.abs(settled) <= 28.01, `bounded by parallax-max (got ${settled})`);
+  assert.ok(new Set(samples.map((v) => v.toFixed(1))).size >= 3, `eased, not a single jump: ${samples.map((v) => v.toFixed(1))}`);
+  // the layer overscans, so its edge never shows inside the card
+  const edges = await page.evaluate(() => { const a = document.querySelector('.hero-art').getBoundingClientRect(); const h = document.querySelector('.hero').getBoundingClientRect(); return { top: a.top - h.top, bottom: a.bottom - h.bottom }; });
+  assert.ok(edges.top <= 0.5 && edges.bottom >= -0.5, `art covers hero: ${JSON.stringify(edges)}`);
+  // fixed background layer follows scroll at a fraction of its speed
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.bg-opt:has-text("Mountains")');
+  await page.goto(`${BASE}#/`);
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForTimeout(700);
+  const bg = await ty(page, '#bg-art');
+  assert.ok(bg < -30 && bg > -90, `background drifted up slowly (got ${bg})`);
+  // enhanced moves more
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("Enhanced")');
+  await page.goto(`${BASE}#/`);
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForTimeout(700);
+  assert.ok((await ty(page, '#bg-art')) < bg - 10, 'enhanced motion gives stronger parallax');
+  // reduced motion: no transform at all
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("Reduced")');
+  await page.goto(`${BASE}#/`);
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForTimeout(500);
+  for (const sel of ['#bg-art', '.hero-art']) assert.equal(await page.evaluate((q) => getComputedStyle(document.querySelector(q)).transform, sel), 'none', sel);
+});
+
+await test('parallax: OS reduced-motion disables it; trip-card art is clipped and decorative', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await skipWelcome(page);
+  await createTrip(page);
+  await createTrip(page, { dest: 'Second', type: 'Beach', start: '2027-02-01', end: '2027-02-04' });
+  await page.setViewportSize({ width: 390, height: 500 });
+  await page.goto(`${BASE}#/trips`);
+  await page.waitForSelector('.trip-card-art svg');
+  await page.evaluate(() => window.scrollTo(0, 120));
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.trip-card-art svg')).transform), 'none');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.trip-card-art')).overflow), 'hidden');
+  assert.equal(await page.getAttribute('.trip-card-art svg', 'aria-hidden'), 'true');
+});
+
+await test('parallax on trip cards moves artwork only, never text or layout', async ({ page }) => {
+  await skipWelcome(page);
+  for (const d of ['One', 'Two', 'Three', 'Four']) await createTrip(page, { dest: d, start: '2027-03-01', end: '2027-03-04' });
+  await page.setViewportSize({ width: 390, height: 520 });
+  await page.goto(`${BASE}#/trips`);
+  await page.waitForSelector('.trip-card');
+  await page.waitForTimeout(500); // let the page-enter animation finish
+  const layout = () => page.evaluate(() => [...document.querySelectorAll('.trip-card h3')].map((e) => Math.round(e.getBoundingClientRect().top + scrollY)));
+  const before = await layout();
+  await page.evaluate(() => window.scrollTo(0, 200));
+  await page.waitForTimeout(600);
+  assert.deepEqual(await layout(), before, 'text positions (page coordinates) unchanged by parallax');
+});
+
+await test('templates: Use / Customize sit together in a footer row on every card', async ({ page }) => {
+  await skipWelcome(page);
+  for (const [w, h] of [[390, 844], [1440, 900]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(`${BASE}#/templates`);
+    await page.waitForSelector('.tpl-card');
+    const cards = await page.evaluate(() => [...document.querySelectorAll('.tpl-card')].map((c) => {
+      const info = c.querySelector('.tpl-info').getBoundingClientRect();
+      const use = c.querySelector('.tpl-actions .btn-primary').getBoundingClientRect();
+      const cus = c.querySelector('.tpl-actions .btn-secondary').getBoundingClientRect();
+      const card = c.getBoundingClientRect();
+      return { belowText: use.top >= info.bottom, sameRow: Math.abs(use.top - cus.top) < 2, equalWidth: Math.abs(use.width - cus.width) < 3, inside: use.left >= card.left && cus.right <= card.right, wide: use.width > 90 };
+    }));
+    assert.equal(cards.length, 6);
+    for (const c of cards) assert.deepEqual(c, { belowText: true, sameRow: true, equalWidth: true, inside: true, wide: true }, `${w}px`);
+  }
+});
+
+await test('settings: selected tab is high-contrast and About tab fills two balanced columns', async ({ page }) => {
+  await skipWelcome(page);
+  const ratio = async () => page.evaluate(() => {
+    const el = document.querySelector('.tab[aria-selected=true]');
+    const cs = getComputedStyle(el);
+    const rgb = (c) => c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+    const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const [a, b] = [lum(rgb(cs.color)), lum(rgb(cs.backgroundColor))].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  });
+  for (const scheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${BASE}#/settings?tab=about`);
+    await page.waitForSelector('.fact-list');
+    assert.ok((await ratio()) >= 4.5, `${scheme}: selected tab contrast ${await ratio()}`);
+    const cols = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.settings-stack > .card')].map((c) => c.getBoundingClientRect());
+      const xs = [...new Set(cards.map((c) => Math.round(c.left)))];
+      const bottoms = xs.map((x) => Math.max(...cards.filter((c) => Math.round(c.left) === x).map((c) => c.bottom)));
+      return { columns: xs.length, gap: Math.max(...bottoms) - Math.min(...bottoms) };
+    });
+    assert.equal(cols.columns, 2);
+    assert.ok(cols.gap < 220, `${scheme}: columns balanced (gap ${cols.gap}px)`);
+  }
+  // rows: label left, controls right, nothing overflowing at phone width
+  await page.setViewportSize({ width: 360, height: 700 });
+  await page.goto(`${BASE}#/settings?tab=about`);
+  const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(over <= 0);
+  assert.ok((await page.locator('.srow').count()) >= 2);
+  assert.ok((await page.locator('.fact').count()) >= 6);
+});
+
+await test('welcome tagline is readable in light and dark', async ({ page }) => {
+  for (const scheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto(BASE);
+    await page.evaluate(() => localStorage.removeItem('packwise.prefs.v1'));
+    await page.goto(`${BASE}#/welcome`);
+    await page.reload();
+    await page.waitForSelector('.welcome-hook');
+    const r = await page.evaluate(() => {
+      const el = document.querySelector('.welcome-hook');
+      const cs = getComputedStyle(el);
+      const rgba = (c) => c.match(/[\d.]+/g).map(Number);
+      const [fr, fg, fb] = rgba(cs.color);
+      const srgb = cs.backgroundColor.startsWith('color(srgb'); // color-mix() serialises as 0-1 floats
+      const [br, bgc, bb, ba = 1] = srgb ? [...rgba(cs.backgroundColor).slice(0, 3).map((v) => v * 255), rgba(cs.backgroundColor)[3] ?? 1] : rgba(cs.backgroundColor);
+      const under = [128, 128, 128]; // worst case: mid-grey artwork behind
+      const mix = [br, bgc, bb].map((v, i) => v * ba + under[i] * (1 - ba));
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const [a, b] = [lum([fr, fg, fb]), lum(mix)].sort((x, y) => y - x);
+      return { ratio: (a + 0.05) / (b + 0.05), alpha: ba };
+    });
+    assert.ok(r.ratio >= 4.5, `${scheme}: tagline contrast ${r.ratio.toFixed(2)}`);
+    assert.ok(r.alpha >= 0.85);
+  }
+});
+
 // ------------------------------------------------------------- responsive
 const viewports = [[360, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
 for (const [w, h] of viewports) {
@@ -1544,7 +1709,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.2.0']);
+  assert.deepEqual(keys, ['packwise-v1.2.1']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -1584,7 +1749,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.2.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.2.1', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());

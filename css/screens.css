@@ -1077,9 +1077,13 @@
 }
 
 .tab[aria-selected='true'] {
-  background: var(--surface);
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent-strong) 30%, transparent);
+}
+
+.tab:not([aria-selected='true']):hover {
   color: var(--text);
-  box-shadow: var(--shadow-sm);
 }
 
 .settings-panel {
@@ -1087,14 +1091,19 @@
 }
 
 .settings-stack {
-  display: grid;
-  gap: 14px;
+  display: block;
 }
 
+.settings-stack > .card {
+  margin-bottom: 12px;
+  break-inside: avoid;
+}
+
+/* two balanced columns on wide screens; cards flow into whichever column is shorter */
 @media (min-width: 900px) {
   .settings-stack {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
+    columns: 2;
+    column-gap: 14px;
   }
 }
 
@@ -1390,5 +1399,199 @@ html[data-bg='minimal'] .trip-card {
 
   .item-row {
     break-inside: avoid;
+  }
+}
+
+/* ---- phase 3.1: settings rows, facts, about ---- */
+.srow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.srow:first-of-type {
+  border-top: 0;
+}
+
+.srow-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.srow-control {
+  flex: none;
+  max-width: 100%;
+}
+
+.srow-status {
+  margin-top: -4px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fact {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fact > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.fact .muted {
+  font-size: 0.88rem;
+}
+
+.fact-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--tone-teal);
+  color: var(--tone-teal-ink);
+}
+
+.about-hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.about-badges {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--tone-teal);
+  color: var(--tone-teal-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.badge-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.install-box {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.install-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 220px;
+}
+
+.settings-card .switch-row,
+.settings-card .danger-zone {
+  padding: 8px 0;
+}
+
+/* ---- templates: footer action row ---- */
+.tpl-card {
+  grid-template-columns: auto 1fr;
+  gap: 10px 12px;
+}
+
+.tpl-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.tpl-actions.has-menu {
+  grid-template-columns: 1fr auto;
+}
+
+.tpl-actions .btn {
+  width: 100%;
+}
+
+/* ---- welcome tagline: legible on any artwork, light or dark ---- */
+.welcome-hook {
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  text-shadow: none;
+  font-style: normal;
+  transform: rotate(-3deg);
+}
+
+/* ---- parallax layers: overscan so drifting never reveals an edge ---- */
+[data-parallax] {
+  will-change: transform;
+}
+
+.hero-art {
+  top: -14%;
+  bottom: auto;
+  height: 128%;
+}
+
+.trip-card-art {
+  overflow: hidden;
+}
+
+.trip-card-art .dest-art {
+  height: 124%;
+  margin-top: -12%;
+}
+
+.welcome-art {
+  overflow: hidden;
+}
+
+.welcome-bg {
+  height: 120%;
+  margin-top: -10%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-parallax] {
+    transform: none !important;
+  }
+}
+
+:root[data-theme='dark'] .welcome-brand h1 span {
+  color: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .welcome-brand h1 span {
+    color: var(--accent);
   }
 }

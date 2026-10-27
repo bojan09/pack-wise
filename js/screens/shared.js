@@ -62,7 +62,7 @@ export function tripCard({ trip, state, href, onMenu, compact = false }) {
     h(
       'a',
       { class: 'trip-card-link', href, 'aria-label': `Open ${trip.name}` },
-      h('div', { class: 'trip-card-art' }, destinationArt(trip.type), h('span', { class: 'trip-card-type' }, icon(meta.icon, { size: 14 }), meta.label), trip.returnOf ? h('span', { class: 'trip-card-return' }, icon('restore', { size: 12 }), 'Return') : null),
+      h('div', { class: 'trip-card-art' }, (() => { const art = destinationArt(trip.type); art.dataset.parallax = '0.07'; art.dataset.parallaxMax = '14'; return art; })(), h('span', { class: 'trip-card-type' }, icon(meta.icon, { size: 14 }), meta.label), trip.returnOf ? h('span', { class: 'trip-card-return' }, icon('restore', { size: 12 }), 'Return') : null),
       h(
         'div',
         { class: 'trip-card-body' },

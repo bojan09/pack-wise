@@ -3,6 +3,7 @@ import { applyPrefs, getPrefs, onPrefsChange, setPrefs } from './prefs.js';
 import { buzz } from './haptics.js';
 import { detectPlatform, installAdvice } from './install.js';
 import { sumQty } from './progress.js';
+import { initParallax } from './parallax.js';
 import { createStore } from './store.js';
 import { createIdbAdapter } from './storage/idb.js';
 import { createMemoryAdapter } from './storage/memory.js';
@@ -160,11 +161,12 @@ async function boot() {
   renderBanners();
 
   // ---- optional decorative background (Settings > Appearance)
-  const bgHost = h('div', { id: 'bg-art', class: 'bg-art', 'aria-hidden': 'true' });
+  const bgHost = h('div', { id: 'bg-art', class: 'bg-art', 'aria-hidden': 'true', 'data-parallax': '0.22', 'data-parallax-mode': 'scroll', 'data-parallax-max': '240' });
   document.body.prepend(bgHost);
   const paintBackground = () => { const art = backgroundArt(getPrefs().background); bgHost.replaceChildren(...(art ? [art] : [])); };
   paintBackground();
   onPrefsChange(paintBackground);
+  initParallax(document.body);
 
   // ---- optional haptics: a tick when more is packed, a pattern when a trip becomes complete
   let lastPacked = sumQty(store.state.items).packed;

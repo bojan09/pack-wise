@@ -36,7 +36,7 @@ export function TemplatesScreen(ctx) {
         { class: 'card tpl-card' },
         h('span', { class: 'tpl-icon' }, icon(typeMeta(t.type).icon, { size: 22 })),
         h('div', { class: 'tpl-info' }, h('h3', { text: t.name }), h('p', { class: 'muted small', text: builtin ? t.blurb : plural(t.items.length, 'item') })),
-        h('div', { class: 'tpl-actions' }, button({ label: 'Use', variant: 'primary', href: `#/trips/new?template=${t.id}`, className: 'btn-sm' }), builtin ? button({ label: 'Customize', variant: 'ghost', className: 'btn-sm', onClick: () => customizeBuiltin(t), ariaLabel: `Customize ${t.name}` }) : h('button', { type: 'button', class: 'icon-btn', 'aria-label': `Actions for ${t.name}`, onClick: () => customMenu(t) }, icon('dots'))),
+        h('div', { class: `tpl-actions${builtin ? '' : ' has-menu'}` }, button({ label: 'Use template', variant: 'primary', href: `#/trips/new?template=${t.id}`, className: 'btn-sm', ariaLabel: `Use ${t.name}` }), builtin ? button({ label: 'Customize', variant: 'secondary', className: 'btn-sm', onClick: () => customizeBuiltin(t), ariaLabel: `Customize ${t.name}` }) : h('button', { type: 'button', class: 'icon-btn tpl-menu', 'aria-label': `Actions for ${t.name}`, onClick: () => customMenu(t) }, icon('dots'))),
       );
       return h(
         'div',

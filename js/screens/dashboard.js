@@ -58,7 +58,7 @@ export function DashboardScreen(ctx) {
       const hero = h(
         'section',
         { class: 'hero', 'aria-label': 'Next trip' },
-        destinationArt(trip.type, { className: 'hero-art' }),
+        (() => { const art = destinationArt(trip.type, { className: 'hero-art' }); art.dataset.parallax = '0.12'; art.dataset.parallaxMax = '28'; return art; })(),
         h('div', { class: 'hero-shade' }),
         h('div', { class: 'hero-text' }, h('h2', { text: trip.name }), trip.returnOf ? h('p', { class: 'hero-place' }, icon('restore', { size: 14 }), 'Return trip') : null, h('p', { class: 'hero-dates', text: tripSubtitle(trip) || 'No dates yet' }), trip.destination && trip.destination !== trip.name ? h('p', { class: 'hero-place' }, icon('pin', { size: 14 }), trip.destination) : null),
         h(

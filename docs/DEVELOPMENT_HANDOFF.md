@@ -54,6 +54,12 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## UI polish + parallax (v1.2.1)
+
+- Fixes from user screenshots: welcome tagline now sits on a readable chip (and "Wise" uses the bright accent in dark mode); template cards have a footer row with equal-width **Use template** / **Customize** (secondary, visible in dark); Settings: solid accent selected tab, two balanced columns (CSS columns), row/fact patterns (`srow`, `fact`), About split into Install / Offline & updates / Privacy / Good to know; fixed a stray "null" rendered by `replaceChildren(null)`.
+- **Parallax** (`js/parallax.js`): layers opt in with `data-parallax="<rate>"` (+ `data-parallax-max`, `data-parallax-mode="scroll"` for the fixed background). Transform-only, eased with a per-frame lerp, overscanned art so edges never show, off screen layers skipped, MutationObserver picks up re-rendered screens. Used on: dashboard hero art, trip-card art, optional background art, welcome art/characters, completion scene. Intensity follows the motion setting (Reduced = none, Enhanced = 1.6×) and the OS reduced-motion preference. Meaningful content (text, controls, the 3D studio) is never parallaxed.
+- Tests: 60 → 66 e2e (parallax easing/bounds/overscan/reduced/enhanced, layout unchanged, template footer geometry, settings tab contrast + column balance, tagline contrast).
+
 ## Compact UI pass (v1.2.0)
 
 User feedback: the app felt zoomed in on phones. Controls, type, spacing, nav and radii were scaled down across all screens (buttons 46→38 px, nav 68→58 px, body 16→14.5 px, cards/tiles/steppers/chips tighter, studio stage shorter). Text inputs stay at 16 px on touch devices (`pointer: coarse`) because iOS Safari zooms into smaller inputs. Touch targets remain ≥ 28 px (steppers) / 32–38 px (buttons, chips). Verified: 60 e2e (no overflow at 5 viewports), screenshots refreshed.

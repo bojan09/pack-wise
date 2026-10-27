@@ -4,7 +4,7 @@ import { icon } from '../ui/icons.js';
 import { button, segmented, field } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
-import { backgroundArt } from '../ui/art.js';
+import { backgroundArt, logoMark } from '../ui/art.js';
 import { ACCENTS, BACKGROUNDS, MOTION_LEVELS, getPrefs, setPrefs } from '../prefs.js';
 import { hapticsSupported, buzz } from '../haptics.js';
 import { STORAGE_NOTE } from '../install.js';
@@ -125,27 +125,31 @@ export function SettingsScreen(ctx) {
   }
 
   // ----------------------------------------------------------------------- About
+  /** A settings row: text on the left, control on the right (stacks on narrow screens). */
+  const row = ({ title, desc, control }) => h('div', { class: 'srow' }, h('div', { class: 'srow-text' }, h('strong', { text: title }), desc ? h('span', { class: 'muted small', text: desc }) : null), control ? h('div', { class: 'srow-control' }, control) : null);
+  const fact = (ic, title, text) => h('li', { class: 'fact' }, h('span', { class: 'fact-icon' }, icon(ic, { size: 18 })), h('div', {}, h('strong', { text: title }), h('span', { class: 'muted', text })));
+
   function about() {
-    const advice = app.installAdvice();
     const installHost = h('div', { class: 'install-box' });
     const paintInstall = () => {
       const a = app.installAdvice();
-      installHost.replaceChildren(h('strong', { text: a.title }), h('p', { class: 'muted', text: a.text }), a.kind === 'prompt' ? button({ label: 'Install app', icon: 'download', variant: 'primary', key: 'install', onClick: async () => { const r = await app.install(); toast(r === 'accepted' ? 'Installing…' : 'Install cancelled.'); } }) : null);
+      installHost.replaceChildren(...[h('div', { class: 'install-text' }, h('strong', { text: a.title }), h('span', { class: 'muted small', text: a.text })), a.kind === 'prompt' ? button({ label: 'Install app', icon: 'download', variant: 'primary', key: 'install', onClick: async () => { const r = await app.install(); toast(r === 'accepted' ? 'Installing…' : 'Install cancelled.'); } }) : null].filter(Boolean)); // replaceChildren would stringify null
     };
     paintInstall();
     unsubInstall?.();
     unsubInstall = app.onInstallChange(() => { if (tab === 'about') paintInstall(); });
-    const cacheStatus = h('p', { class: 'muted small', 'aria-live': 'polite', text: app.swSupported ? 'Offline files have not been checked yet.' : 'Offline files are only available on a secure (https) address.' });
-    const repairBtn = button({ label: 'Repair offline files', icon: 'refresh', variant: 'secondary', key: 'repair-cache', onClick: async () => { cacheStatus.textContent = 'Repairing…'; const r = await app.repairCache(); cacheStatus.textContent = r.ok ? `Offline files repaired and verified (${r.total} files).` : `Repair did not finish${r.missing?.length ? `: ${r.missing.length} file(s) missing` : ''}. Check your connection and try again.`; } });
-    const checkBtn = button({ label: 'Check offline files', icon: 'check', variant: 'secondary', key: 'verify-cache', onClick: async () => { cacheStatus.textContent = 'Checking…'; const r = await app.verifyCache(); cacheStatus.textContent = r.ok ? (r.missing.length ? `${r.missing.length} of ${r.total} offline files are missing. Use “Repair offline files”.` : `All ${r.total} offline files are in place. PackWise will open without a connection.`) : 'Could not check yet. Reload once and try again.'; } });
-    void advice;
+    const cacheStatus = h('p', { class: 'muted small srow-status', 'aria-live': 'polite', text: app.swSupported ? 'Offline files have not been checked yet.' : 'Offline files are only available on a secure (https) address.' });
+    const repairBtn = button({ label: 'Repair', icon: 'refresh', variant: 'secondary', key: 'repair-cache', ariaLabel: 'Repair offline files', onClick: async () => { cacheStatus.textContent = 'Repairing…'; const r = await app.repairCache(); cacheStatus.textContent = r.ok ? `Offline files repaired and verified (${r.total} files).` : `Repair did not finish${r.missing?.length ? `: ${r.missing.length} file(s) missing` : ''}. Check your connection and try again.`; } });
+    const checkBtn = button({ label: 'Check', icon: 'check', variant: 'secondary', key: 'verify-cache', ariaLabel: 'Check offline files', onClick: async () => { cacheStatus.textContent = 'Checking…'; const r = await app.verifyCache(); cacheStatus.textContent = r.ok ? (r.missing.length ? `${r.missing.length} of ${r.total} offline files are missing. Use “Repair offline files”.` : `All ${r.total} offline files are in place. PackWise will open without a connection.`) : 'Could not check yet. Reload once and try again.'; } });
+    const updateBtn = button({ label: 'Check now', icon: 'refresh', variant: 'secondary', onClick: async () => { const r = await app.checkForUpdate(); toast(r === 'update' ? 'Update found — see the prompt to reload.' : r === 'none' ? 'You have the latest version.' : 'Could not check for updates right now.'); } });
     return h(
       'div',
       { class: 'settings-stack' },
-      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'PackWise' }), h('p', {}, h('strong', { text: 'Smart Packing Companion' }), ` · v${APP_VERSION}`), h('p', { class: 'muted small', text: `Storage: ${app.storageKind === 'indexeddb' ? 'IndexedDB (this device)' : 'Temporary memory only. Changes will not survive closing the app.'}` })),
-      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Install & offline' }), installHost, h('div', { class: 'btn-row' }, app.swSupported ? checkBtn : null, app.swSupported ? repairBtn : null), cacheStatus, h('p', { class: 'muted small', text: 'Once loaded, PackWise works with no connection. Updates arrive automatically; you choose when to reload.' }), app.swSupported ? h('div', { class: 'row-between' }, h('span', {}, h('strong', { text: 'App updates' }), h('span', { class: 'muted small block', text: 'PackWise checks for a new version when you open it.' })), button({ label: 'Check now', icon: 'refresh', variant: 'secondary', onClick: async () => { const r = await app.checkForUpdate(); toast(r === 'update' ? 'Update found — see the prompt to reload.' : r === 'none' ? 'You have the latest version.' : 'Could not check for updates right now.'); } })) : null),
-      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Privacy' }), h('ul', { class: 'plain-list' }, h('li', {}, icon('lock', { size: 18 }), 'No account, no tracking, no analytics. Your trips are never sent anywhere.'), h('li', {}, icon('wifi', { size: 18 }), 'The only network use is loading PackWise itself. Countdowns use your device clock; there are no background notifications.'), h('li', {}, icon('info', { size: 18 }), 'Everything is stored in this browser. Clearing site data removes it, so export backups.'))),
-      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Good to know' }), h('ul', { class: 'plain-list' }, h('li', {}, icon('info', { size: 18 }), 'Starter lists are general suggestions based on trip type, length, season and weather you choose. They are not a weather forecast or airline, safety or customs advice.'), h('li', {}, icon('info', { size: 18 }), 'Seasons follow the Balkan calendar (spring Mar–May, summer Jun–Aug, fall Sep–Nov, winter Dec–Feb).'), h('li', {}, icon('info', { size: 18 }), 'The Packing Studio illustrates your checklist. A full suitcase picture does not mean everything fits.'), h('li', {}, icon('info', { size: 18 }), 'PackWise bundles no third-party code, fonts or images.'))),
+      h('section', { class: 'card settings-card about-hero' }, h('span', { class: 'about-logo' }, logoMark({ size: 44 })), h('div', {}, h('h2', { class: 'card-title', text: 'PackWise' }), h('p', { class: 'muted', text: 'Smart Packing Companion' })), h('div', { class: 'about-badges' }, h('span', { class: 'badge', text: `v${APP_VERSION}` }), h('span', { class: `badge${app.storageKind === 'indexeddb' ? '' : ' badge-warn'}`, text: app.storageKind === 'indexeddb' ? 'Stored on this device' : 'Temporary memory only' }))),
+      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Install' }), installHost),
+      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Offline & updates' }), row({ title: 'Offline files', desc: 'Make sure PackWise opens without a connection.', control: app.swSupported ? h('div', { class: 'btn-row' }, checkBtn, repairBtn) : null }), cacheStatus, app.swSupported ? row({ title: 'App updates', desc: 'PackWise checks for a new version when you open it. You choose when to reload.', control: updateBtn }) : null),
+      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Privacy' }), h('ul', { class: 'fact-list' }, fact('lock', 'No accounts or tracking', 'No analytics, no cookies. Your trips are never sent anywhere.'), fact('wifi', 'Offline by design', 'The only network use is loading PackWise itself. Countdowns use your device clock; there are no background notifications.'), fact('info', 'Stored in this browser', 'Clearing site data removes your trips, so export backups.'))),
+      h('section', { class: 'card settings-card' }, h('h2', { class: 'card-title', text: 'Good to know' }), h('ul', { class: 'fact-list' }, fact('sparkle', 'Suggestions, not advice', 'Starter lists follow trip type, length, season and weather you choose. They are not a forecast or airline, safety or customs advice.'), fact('calendar', 'Balkan seasons', 'Spring Mar–May · summer Jun–Aug · fall Sep–Nov · winter Dec–Feb.'), fact('luggage', 'The studio is an illustration', 'A full suitcase picture does not mean everything fits.'), fact('box', 'Nothing third-party', 'No bundled third-party code, fonts or images.'))),
     );
   }
 
