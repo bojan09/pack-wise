@@ -9,7 +9,7 @@ import { BAG_KINDS, CATEGORY_PRESETS, LIMITS, PRIORITIES, categoryMeta, normaliz
 import { bagProgress, categoryProgress, essentialsLeft, isItemPacked, sumQty } from '../progress.js';
 import { getTrip, tripBags, tripItems } from '../selectors.js';
 import { plural } from '../format.js';
-import { pageHeader, tripSubtitle } from './shared.js';
+import { pageHeader, tripSubtitle, weatherLabel } from './shared.js';
 import { returnTripDialog, saveTemplateDialog } from './tripDialogs.js';
 
 const FILTERS = [
@@ -249,7 +249,7 @@ export function ChecklistScreen(ctx) {
       const main = h(
         'div',
         { class: 'checklist-main' },
-        pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
+        pageHeader({ title: trip.name, subtitle: [trip.returnOf ? 'Return trip' : '', tripSubtitle(trip), weatherLabel(trip)].filter(Boolean).join(' · '), back: { href: '#/trips', label: 'Back to trips' }, actions: [iconButton({ icon: 'luggage', label: 'Open Packing Studio', href: `#/trip/${tripId}/studio`, key: 'studio-link' }), iconButton({ icon: 'plus', label: 'Add item', onClick: () => itemDialog({ store, tripId }), className: 'icon-btn-primary hide-desktop', key: 'add-top' }), iconButton({ icon: 'dots', label: 'Trip actions', onClick: () => openMenu(trip), key: 'trip-menu' })] }),
         h('section', { class: 'card summary-card hide-desktop', 'aria-label': 'Packing summary' }, h('div', { class: 'row-between' }, h('strong', { text: 'Packed' }), h('strong', { class: 'pct', text: `${q.percent}%` })), progressBar(q.percent, { label: 'Packing progress' }), h('p', { class: 'muted small', text: `${q.packed} / ${q.target} items${bags.length > 1 ? ` · ${plural(bags.length, 'bag')}` : ''}` })),
         complete ? h('div', { class: 'banner banner-success' }, icon('check', { size: 18 }), h('span', { text: 'Everything is packed!' }), h('a', { class: 'link', href: `#/trip/${tripId}/summary`, text: 'View summary' })) : essLeft.length ? h('div', { class: 'banner banner-warn essentials-banner' }, icon('star', { size: 18 }), h('span', { text: `${plural(essLeft.length, 'essential')} still to pack` }), h('button', { type: 'button', class: 'link-btn', text: 'Show', onClick: () => { filter = 'essential'; ctx.refresh(); } })) : null,
         h('div', { class: 'toolbar' }, search, bags.length > 1 ? bagSelect(bags) : null, sortSel),

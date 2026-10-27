@@ -2,7 +2,7 @@ import { h } from '../dom.js';
 import { icon } from '../ui/icons.js';
 import { iconButton, progressBar } from '../ui/components.js';
 import { destinationArt } from '../ui/art.js';
-import { TRIP_TYPES } from '../models.js';
+import { CONDITIONS, SEASONS, TRIP_TYPES } from '../models.js';
 import { daysUntil, parseLocalDate, tripLengthDays, tripPhase, sumQty } from '../progress.js';
 import { formatRange, plural } from '../format.js';
 import { tripItems } from '../selectors.js';
@@ -18,6 +18,13 @@ export function pageHeader({ title, subtitle, back, actions = [], className = ''
 }
 
 export const typeMeta = (type) => TRIP_TYPES.find((t) => t.id === type) || TRIP_TYPES[TRIP_TYPES.length - 1];
+
+/** "Summer · Warm, Rainy" or '' when nothing was chosen. */
+export function weatherLabel(trip) {
+  const season = SEASONS.find((s) => s.id && s.id === trip.season)?.label || '';
+  const conds = CONDITIONS.filter((c) => trip.conditions?.includes(c.id)).map((c) => c.label).join(', ');
+  return [season, conds].filter(Boolean).join(' · ');
+}
 
 export function tripSubtitle(trip) {
   return [trip.destination && trip.destination !== trip.name ? trip.destination : '', formatRange(trip.startDate, trip.endDate)].filter(Boolean).join(' · ');

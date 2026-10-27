@@ -74,7 +74,7 @@ test('recommendations are deterministic, deduplicated and scale with duration', 
   const short = generatePackingList({ type: 'city', days: 2 }).find((i) => i.name === 'T-shirts').target;
   const long = generatePackingList({ type: 'city', days: 9 }).find((i) => i.name === 'T-shirts').target;
   assert.ok(long > short);
-  assert.ok(generatePackingList({ type: 'camping', days: 3 }).some((i) => i.name === 'Tent'));
+  assert.ok(generatePackingList({ type: 'camping', days: 3 }).some((i) => /^Tent/.test(i.name)));
   assert.ok(generateTasks({ transport: 'flight' }).some((t) => t.phase === 'return'));
 });
 

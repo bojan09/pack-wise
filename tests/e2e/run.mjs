@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.1.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.1.1'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -799,7 +799,7 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   await page.fill('input[name=destination]', 'Woods');
   await page.click('button:has-text("Generate Packing List")');
   await page.waitForSelector('h1:has-text("Woods")');
-  assert.ok((await tripState(page)).items.some((i) => i.name === 'Tent'));
+  assert.ok((await tripState(page)).items.some((i) => /^Tent/.test(i.name)));
   // customize a built-in and save to My templates
   await page.goto(`${BASE}#/templates`);
   await page.click('button[aria-label="Customize Weekend getaway"]');
@@ -821,8 +821,8 @@ await test('templates: save from a trip, build a new trip from it, built-ins, cu
   // climate nudges the suggested list
   await page.goto(`${BASE}#/trips/new`);
   await page.fill('input[name=destination]', 'Arctic');
-  await page.click('summary:has-text("More options")');
-  await page.selectOption('select[name=climate]', 'cold');
+  await page.click('label.seg-opt:has-text("Winter")');
+  await page.click('label.cond-chip:has-text("Cold")');
   await page.click('button:has-text("Generate Packing List")');
   await page.waitForSelector('h1:has-text("Arctic")');
   assert.ok((await tripState(page)).items.some((i) => i.name === 'Gloves'));
@@ -917,7 +917,7 @@ await test('phase 2 data survives export/import (templates, return links, new fi
   await skipWelcome(page);
   await createTrip(page, { dest: 'Rome, Italy' });
   const src = await firstTrip(page);
-  await page.evaluate((tid) => { const { store } = window.__packwise; store.saveTripAsTemplate(tid, 'Tpl'); store.createReturnTrip(tid, {}); store.updateTrip(tid, { climate: 'cold' }); }, src);
+  await page.evaluate((tid) => { const { store } = window.__packwise; store.saveTripAsTemplate(tid, 'Tpl'); store.createReturnTrip(tid, {}); store.updateTrip(tid, { season: 'winter', conditions: ['cold', 'rainy'] }); }, src);
   await page.goto(`${BASE}#/settings`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const json = readFileSync(await dl.path(), 'utf8');
@@ -932,7 +932,8 @@ await test('phase 2 data survives export/import (templates, return links, new fi
   assert.deepEqual(after.trips, before.trips);
   assert.deepEqual(after.templates, before.templates);
   assert.equal(after.trips.find((t) => t.returnOf).returnOf, src);
-  assert.equal(after.trips.find((t) => t.id === src).climate, 'cold');
+  assert.deepEqual(after.trips.find((t) => t.id === src).conditions, ['cold', 'rainy']);
+  assert.equal(after.trips.find((t) => t.id === src).season, 'winter');
 });
 
 await test('offline: studio and checklist work with the service worker, edits persist', async ({ page, ctx }) => {
@@ -955,6 +956,53 @@ await test('offline: studio and checklist work with the service worker, edits pe
   await reloadSettled(page);
   assert.equal((await tripState(page)).items.filter((i) => i.packed > 0).length, 1);
 }, { sw: true });
+
+
+await test('create trip: camping auto-suggests camping gear + backpack; season and weather shape the list', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/trips/new`);
+  await page.click('label.tile:has-text("Camping")');
+  assert.equal(await page.isChecked('input[name=bags][value=camping]'), true);
+  assert.equal(await page.isChecked('input[name=bags][value=backpack]'), true);
+  assert.equal(await page.isChecked('input[name=bags][value="carry-on"]'), false);
+  // manual choice is respected: once the user touches bags, switching type does not override
+  await page.click('label.tile:has-text("City")');
+  await page.click('label.tile:has-text("Camping")');
+  await page.click('label.tile:has-text("Backpack")');
+  await page.click('label.tile:has-text("City")');
+  await page.click('label.tile:has-text("Camping")');
+  assert.equal(await page.isChecked('input[name=bags][value=backpack]'), false);
+  await page.click('label.tile:has-text("Backpack")');
+  await page.fill('input[name=destination]', 'Pine Lake');
+  await page.click('label.seg-opt:has-text("Fall")');
+  await page.click('label.cond-chip:has-text("Cool")');
+  await page.click('label.cond-chip:has-text("Rainy")');
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Pine Lake")');
+  await page.waitForSelector('text=Fall · Cool, Rainy');
+  const st = await tripState(page);
+  const trip = st.trips[0];
+  assert.equal(trip.season, 'fall');
+  assert.deepEqual(trip.conditions, ['cool', 'rainy']);
+  const gear = st.bags.find((b) => b.kind === 'camping');
+  assert.ok(gear && gear.name === 'Camping gear');
+  const camp = st.items.filter((i) => i.category === 'camping');
+  assert.ok(camp.length >= 15 && camp.every((i) => i.bagId === gear.id));
+  assert.ok(camp.some((i) => i.name === 'Tarp / rain fly'));
+  assert.ok(st.items.some((i) => i.name === 'Compact umbrella'));
+  await page.waitForSelector('section[aria-label="Camping gear"]');
+  // studio shows camping tokens for the gear bag
+  await page.goto(`${BASE}#/trip/${trip.id}/studio`);
+  await page.selectOption('select[name=bag]', gear.id);
+  await page.waitForSelector('.tray-token .tok-camping');
+  // edit keeps the weather choices
+  await page.goto(`${BASE}#/trip/${trip.id}/edit`);
+  assert.equal(await page.isChecked('input[name=season][value=fall]'), true);
+  assert.equal(await page.isChecked('input[name=conditions][value=rainy]'), true);
+  await page.click('label.cond-chip:has-text("Windy")');
+  await page.click('button:has-text("Save changes")');
+  await page.waitForSelector('text=Fall · Cool, Rainy, Windy');
+});
 
 // ------------------------------------------------------------- responsive
 const viewports = [[360, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
@@ -999,7 +1047,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.1.0']);
+  assert.deepEqual(keys, ['packwise-v1.1.1']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -1039,7 +1087,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.1.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.1.1', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());

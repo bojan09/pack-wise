@@ -1,6 +1,6 @@
 # PackWise — development handoff
 
-Last updated: end of **Phase 2** (smart travel + Packing Studio). Phase 3 is not started.
+Last updated: end of **Phase 2.1** (smart travel + Packing Studio). Phase 3 is not started.
 
 ## Decisions
 
@@ -41,6 +41,13 @@ Last updated: end of **Phase 2** (smart travel + Packing Studio). Phase 3 is not
 
 - `npm test`: **35/35** unit tests (adds ordering, bulk, templates, copy-trip, return trip, readiness, companion, demo data, backup round-trip of new fields).
 - `npm run test:e2e`: **41/41** (adds: studio/tray/case/tile/checklist sync, bag switch, rapid taps, leaving mid-animation, trip switching, camera buttons/keyboard/drag, lid, selection, motion levels incl. OS override, 150-item legibility caps, 500-item performance (checklist ≈0.4 s, studio ≈0.1 s here), reorder by drag/keyboard/dialog, bulk ops, templates + copy trip + climate, return trip, companion + readiness, sample data, new-field backup, offline studio; studio/templates added to the accessible-name and 5-viewport overflow sweeps).
+
+## Phase 2.1 (season, weather, camping)
+
+- `trip.climate` is replaced by `trip.season` (`''|spring|summer|fall|winter`) and `trip.conditions` (subset of hot/warm/cool/cold/rainy/snowy/windy, canonical order). `normalizeTrip` maps legacy `climate` (warm→warm, mild→cool, cold→cold) when `conditions` is absent, so old backups still import; no schema bump needed.
+- Rules (`js/templates.js`): chosen conditions win; with none, the season supplies defaults. Camping adds `CAMPING_CONDITION_EXTRAS` (tarp, cold-rated bag, 4-season tent, extra water, ...). New `camping` item category and `camping` bag kind; `bagForCategory` sends camping gear to that bag, then backpack.
+- Form: Season & weather is section 4; choosing the Camping type ticks Backpack + Camping gear unless the user already touched the bag tiles.
+- Verified: 40 unit, 42 e2e (adds form flow, bag auto-suggest, weather-driven list, studio camping tokens, edit round-trip). Chromium only.
 
 ## Phase 2 known gaps
 

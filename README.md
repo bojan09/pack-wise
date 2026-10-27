@@ -24,6 +24,11 @@ A free, offline-first packing and travel-prep app. Plain HTML, CSS and JavaScrip
 - Return-trip mode: a separate checklist for the journey home; the original trip is never changed.
 - Dashboard readiness chip; dismissible companion tips (mutable); motion setting (Reduced / Standard / Enhanced; the OS setting always wins); removable sample trip.
 
+## Added in Phase 2.1 (v1.1.1)
+
+- **Camping**: a "Camping gear" bag option (auto-suggested with a backpack when you pick the Camping type), a new "Camping gear" category and a much fuller camping list (shelter, sleeping, cooking, water, tools, hygiene, safety) that adapts to the weather you choose.
+- **Season & weather** replace the single climate option: pick a season (spring, summer, fall, winter) and any expected conditions (hot, warm, cool, cold, rainy, snowy, windy). The suggested list, including camping shelter and sleeping gear, follows your choices. It is not a forecast.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

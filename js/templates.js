@@ -32,16 +32,31 @@ const STYLE_EXTRAS = {
     it('documents', 'Business cards', 1),
     it('documents', 'Meeting notes / agenda', 1),
   ],
-  camping: () => [
-    it('misc', 'Tent', 1, true),
-    it('misc', 'Sleeping bag', 1, true),
-    it('misc', 'Sleeping mat', 1),
-    it('misc', 'Headlamp / flashlight', 1, true),
-    it('misc', 'Camping stove & fuel', 1),
-    it('misc', 'Water filter / purification', 1),
+  camping: (d) => [
+    it('camping', 'Tent (with poles & pegs)', 1, true),
+    it('camping', 'Sleeping bag', 1, true),
+    it('camping', 'Sleeping mat', 1),
+    it('camping', 'Headlamp / flashlight', 1, true),
+    it('camping', 'Spare batteries', 1),
+    it('camping', 'Camping stove & fuel', 1),
+    it('camping', 'Lighter / waterproof matches', 1, true),
+    it('camping', 'Cooking pot & utensils', 1),
+    it('camping', 'Plate, cup & cutlery', 1),
+    it('camping', 'Food & snacks', clamp(d, 2, 8)),
+    it('camping', 'Cooler / food storage', 1),
+    it('camping', 'Water bottles / container', 2),
+    it('camping', 'Water filter / purification', 1),
+    it('camping', 'Multi-tool / knife', 1),
+    it('camping', 'Rope / cord', 1),
+    it('camping', 'Camp chair', 1),
+    it('camping', 'Trash bags', 1),
+    it('camping', 'Trowel & toilet paper', 1),
+    it('camping', 'Map / compass', 1),
     it('essentials', 'First-aid kit', 1, true),
     it('essentials', 'Insect repellent', 1),
     it('clothing', 'Hiking boots', 1),
+    it('clothing', 'Hiking socks (pairs)', clamp(Math.ceil(d / 2), 2, 5)),
+    it('clothing', 'Fleece / warm mid-layer', 1),
     it('clothing', 'Rain jacket', 1),
   ],
   winter: (d) => [
@@ -58,11 +73,34 @@ const STYLE_EXTRAS = {
   custom: () => [],
 };
 
-/** Optional climate preference nudges the list; never required. */
-const CLIMATE_EXTRAS = {
+/** Season gives a gentle baseline; the user's chosen conditions refine it. */
+const SEASON_EXTRAS = {
+  spring: [it('clothing', 'Light rain jacket', 1), it('clothing', 'Layering sweater', 1)],
+  summer: [it('clothing', 'Sun hat', 1), it('toiletries', 'Sunscreen', 1, true), it('misc', 'Sunglasses', 1)],
+  fall: [it('clothing', 'Layering sweater', 1), it('clothing', 'Light rain jacket', 1), it('clothing', 'Warm sweater', 1)],
+  winter: [it('clothing', 'Thermal base layers', 2), it('clothing', 'Gloves', 1), it('clothing', 'Warm hat', 1), it('clothing', 'Scarf', 1)],
+};
+const SEASON_DEFAULT_CONDITIONS = { spring: ['cool'], summer: ['warm'], fall: ['cool'], winter: ['cold'] };
+
+const CONDITION_EXTRAS = {
+  hot: [it('clothing', 'Sun hat', 1), it('toiletries', 'Sunscreen', 1, true), it('misc', 'Sunglasses', 1), it('misc', 'Reusable water bottle', 1), it('clothing', 'Lightweight breathable tops', 2)],
   warm: [it('clothing', 'Sun hat', 1), it('toiletries', 'Sunscreen', 1, true), it('misc', 'Sunglasses', 1)],
-  mild: [it('clothing', 'Light rain jacket', 1), it('clothing', 'Layering sweater', 1)],
+  cool: [it('clothing', 'Layering sweater', 1)],
   cold: [it('clothing', 'Thermal base layers', 2), it('clothing', 'Gloves', 1), it('clothing', 'Warm hat', 1), it('clothing', 'Scarf', 1)],
+  rainy: [it('clothing', 'Rain jacket', 1), it('misc', 'Compact umbrella', 1), it('clothing', 'Waterproof shoes / spare dry socks', 1), it('misc', 'Dry bag / rain cover for your bag', 1)],
+  snowy: [it('clothing', 'Waterproof boots', 1), it('clothing', 'Waterproof gloves', 1), it('clothing', 'Warm hat', 1), it('clothing', 'Thermal base layers', 2)],
+  windy: [it('clothing', 'Windbreaker', 1), it('toiletries', 'Lip balm', 1)],
+};
+
+/** Camping needs more than clothes: conditions change shelter and sleeping gear too. */
+const CAMPING_CONDITION_EXTRAS = {
+  hot: [it('camping', 'Extra drinking water', 1, true), it('camping', 'Shade tarp / sun shelter', 1)],
+  warm: [it('camping', 'Extra drinking water', 1)],
+  cool: [it('camping', 'Warm sleeping bag liner', 1)],
+  cold: [it('camping', 'Cold-rated sleeping bag', 1, true), it('camping', 'Insulated sleeping pad', 1), it('camping', 'Hand warmers', 2), it('camping', 'Extra blanket', 1)],
+  rainy: [it('camping', 'Tarp / rain fly', 1, true), it('camping', 'Waterproof pack cover', 1), it('camping', 'Spare dry clothes in dry bag', 1)],
+  snowy: [it('camping', 'Snow-rated (4-season) tent', 1, true), it('camping', 'Insulated sleeping pad', 1), it('camping', 'Snow shovel', 1)],
+  windy: [it('camping', 'Extra tent stakes & guy lines', 1), it('camping', 'Windshield for stove', 1)],
 };
 
 /** Built-in templates are named presets of the same rules, so they stay consistent and editable. */
@@ -76,19 +114,23 @@ export const BUILTIN_TEMPLATES = [
 ];
 
 /**
- * @param {{type?: string, style?: string, days?: number, travelers?: number, bagKinds?: string[], climate?: string}} opts
+ * @param {{type?: string, style?: string, days?: number, travelers?: number, bagKinds?: string[], season?: string, conditions?: string[]}} opts
  * @returns {Array<{category:string,name:string,target:number,essential:boolean}>}
  */
-export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], climate = '' } = {}) {
+export function generatePackingList({ type = 'custom', style, days, travelers = 1, bagKinds = [], season = '', conditions = [] } = {}) {
   const d = clamp(Math.round(days || defaultDays(type)), 1, 60);
   const compact = bagKinds.length > 0 && bagKinds.every((k) => k === 'backpack' || k === 'carry-on');
   const carryOnOnly = bagKinds.length > 0 && bagKinds.every((k) => k === 'carry-on');
   // longer trips assume laundry; small bags force the same assumption
   const cap = compact ? 6 : d > 10 ? 8 : 12;
 
+  // chosen conditions win; without any, the season supplies a sensible default
+  const conds = conditions.length ? conditions : SEASON_DEFAULT_CONDITIONS[season] || [];
+  const camping = (style || type) === 'camping';
+
   let jacket = 'Jacket';
-  if (climate === 'warm') jacket = 'Light jacket';
-  if (climate === 'cold') jacket = 'Warm jacket';
+  if (conds.includes('cold') || conds.includes('snowy')) jacket = 'Warm jacket';
+  else if (conds.includes('hot') || conds.includes('warm')) jacket = 'Light jacket';
 
   const base = [
     it('clothing', 'T-shirts', clamp(d, 2, cap)),
@@ -118,7 +160,12 @@ export function generatePackingList({ type = 'custom', style, days, travelers = 
     base.push(it('documents', 'Group itinerary & booking details', 1), it('electronics', 'Multi-port charger / power strip', 1), it('misc', 'Snacks to share', 1));
   }
 
-  const extras = [...(STYLE_EXTRAS[style || type] || STYLE_EXTRAS.custom)(d), ...(CLIMATE_EXTRAS[climate] || [])];
+  const extras = [
+    ...(STYLE_EXTRAS[style || type] || STYLE_EXTRAS.custom)(d),
+    ...(SEASON_EXTRAS[season] || []),
+    ...conds.flatMap((c) => CONDITION_EXTRAS[c] || []),
+    ...(camping ? conds.flatMap((c) => CAMPING_CONDITION_EXTRAS[c] || []) : []),
+  ];
   // a style-specific shoe/boot replaces the generic pair instead of sitting beside it
   const specificFootwear = extras.some((e) => /shoes|boots/i.test(e.name));
   const seen = new Set();
@@ -170,6 +217,7 @@ export function builtinTemplateItems(id, overrides = {}) {
 
 /** Which bag kinds suit a category best, in order of preference. */
 const BAG_PREFERENCE = {
+  camping: ['camping', 'backpack', 'checked', 'other'],
   documents: ['carry-on', 'backpack', 'checked', 'other'],
   electronics: ['carry-on', 'backpack', 'checked', 'other'],
   essentials: ['carry-on', 'backpack', 'checked', 'other'],

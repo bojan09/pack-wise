@@ -83,20 +83,20 @@ test('bulk delete returns records and restoreItems undoes it without duplicates'
 });
 
 // --------------------------------------------------------------- templates
-test('recommendations stay deterministic and respond to bags, climate and travelers', () => {
-  const same = () => generatePackingList({ type: 'city', days: 8, travelers: 3, bagKinds: ['backpack'], climate: 'cold' });
+test('recommendations stay deterministic and respond to bags, season, weather and travelers', () => {
+  const same = () => generatePackingList({ type: 'city', days: 8, travelers: 3, bagKinds: ['backpack'], conditions: ['cold'] });
   assert.deepEqual(same(), same());
   const names = (o) => generatePackingList({ type: 'city', days: 9, ...o }).map((i) => i.name);
   const qty = (o, n) => generatePackingList({ type: 'city', days: 9, ...o }).find((i) => i.name === n).target;
   assert.ok(qty({ bagKinds: ['backpack'] }, 'T-shirts') < qty({ bagKinds: ['checked'] }, 'T-shirts'));
-  assert.ok(names({ climate: 'cold' }).includes('Gloves'));
-  assert.ok(names({ climate: 'cold' }).includes('Warm jacket'));
-  assert.ok(!names({ climate: 'warm' }).includes('Gloves'));
-  assert.ok(names({ climate: 'warm' }).includes('Sunscreen'));
+  assert.ok(names({ conditions: ['cold'] }).includes('Gloves'));
+  assert.ok(names({ conditions: ['cold'] }).includes('Warm jacket'));
+  assert.ok(!names({ conditions: ['warm'] }).includes('Gloves'));
+  assert.ok(names({ conditions: ['warm'] }).includes('Sunscreen'));
   assert.ok(names({ travelers: 2 }).includes('Multi-port charger / power strip'));
   assert.ok(!names({ travelers: 1 }).includes('Multi-port charger / power strip'));
   assert.ok(names({ bagKinds: ['carry-on'] }).some((n) => /liquids/.test(n)));
-  for (const o of [{}, { climate: 'cold', type: 'winter' }, { type: 'beach', climate: 'warm' }]) {
+  for (const o of [{}, { conditions: ['cold'], type: 'winter' }, { type: 'beach', season: 'summer', conditions: ['warm', 'rainy'] }]) {
     const keys = generatePackingList({ days: 5, ...o }).map((i) => `${i.category}|${i.name.toLowerCase()}`);
     assert.equal(new Set(keys).size, keys.length);
   }
@@ -257,4 +257,79 @@ test('backup round-trips templates and return links; dangling return link is dro
   assert.equal(links.length, 2);
   for (const l of links) assert.ok(other.state.trips.some((x) => x.id === l.returnOf && !x.returnOf));
   assert.notEqual(links[0].returnOf, links[1].returnOf);
+});
+
+// ------------------------------------------------- season, weather, camping
+import { normalizeTrip } from '../../js/models.js';
+
+test('season sets sensible defaults; chosen conditions override them', () => {
+  const names = (o) => generatePackingList({ type: 'city', days: 5, ...o }).map((i) => i.name);
+  assert.ok(names({ season: 'summer' }).includes('Sunscreen'));
+  assert.ok(names({ season: 'winter' }).includes('Gloves'));
+  assert.ok(names({ season: 'spring' }).includes('Light rain jacket'));
+  assert.ok(names({ season: 'fall' }).includes('Warm sweater'));
+  // summer season but the user says it will be cold: conditions win for the jacket, season extras still apply
+  assert.ok(names({ season: 'summer', conditions: ['cold'] }).includes('Warm jacket'));
+  assert.ok(names({ conditions: ['rainy'] }).includes('Compact umbrella'));
+  assert.ok(names({ conditions: ['snowy'] }).includes('Waterproof boots'));
+  assert.ok(names({ conditions: ['windy'] }).includes('Windbreaker'));
+  assert.ok(names({ conditions: ['hot'] }).includes('Reusable water bottle'));
+  const none = names({});
+  assert.ok(!none.includes('Compact umbrella') && !none.includes('Gloves'));
+  // combined conditions stay deduplicated
+  const combo = generatePackingList({ type: 'winter', days: 6, season: 'winter', conditions: ['cold', 'snowy'] }).map((i) => `${i.category}|${i.name.toLowerCase()}`);
+  assert.equal(new Set(combo).size, combo.length);
+});
+
+test('camping lists are thorough, use the camping category and adapt to weather', () => {
+  const list = (o) => generatePackingList({ type: 'camping', days: 4, ...o });
+  const base = list({});
+  const camp = base.filter((i) => i.category === 'camping').map((i) => i.name);
+  for (const must of ['Tent (with poles & pegs)', 'Sleeping bag', 'Camping stove & fuel', 'Headlamp / flashlight', 'Food & snacks', 'Trowel & toilet paper']) assert.ok(camp.includes(must), must);
+  assert.ok(base.find((i) => i.name === 'First-aid kit').essential);
+  assert.ok(camp.length >= 15);
+  const n = (o) => list(o).filter((i) => i.category === 'camping').map((i) => i.name);
+  assert.ok(n({ conditions: ['rainy'] }).includes('Tarp / rain fly'));
+  assert.ok(n({ conditions: ['cold'] }).includes('Cold-rated sleeping bag'));
+  assert.ok(n({ season: 'winter' }).includes('Cold-rated sleeping bag'));
+  assert.ok(n({ conditions: ['snowy'] }).includes('Snow-rated (4-season) tent'));
+  assert.ok(n({ conditions: ['hot'] }).includes('Extra drinking water'));
+  assert.ok(!generatePackingList({ type: 'city', days: 4, conditions: ['rainy'] }).some((i) => i.category === 'camping'));
+});
+
+test('camping gear bag: camping items go there, with backpack as fallback', async () => {
+  const { store } = await fresh();
+  const t = mk(store, { name: 'Woods', type: 'camping' }, { bagKinds: ['backpack', 'camping'] });
+  const bags = tripBags(store.state, t.id);
+  const gear = bags.find((b) => b.kind === 'camping');
+  assert.equal(gear.name, 'Camping gear');
+  const items = tripItems(store.state, t.id);
+  assert.ok(items.filter((i) => i.category === 'camping').every((i) => i.bagId === gear.id));
+  assert.ok(items.filter((i) => i.category === 'documents').every((i) => i.bagId === bags.find((b) => b.kind === 'backpack').id));
+  const noGear = mk(store, { name: 'Woods 2', type: 'camping' }, { bagKinds: ['backpack'] });
+  const only = tripBags(store.state, noGear.id)[0];
+  assert.ok(tripItems(store.state, noGear.id).every((i) => i.bagId === only.id));
+});
+
+test('trip normalizes season/conditions and maps legacy climate', () => {
+  const base = { id: 't1', name: 'X' };
+  assert.deepEqual(normalizeTrip({ ...base, season: 'summer', conditions: ['rainy', 'warm', 'warm', 'bogus'] }).conditions, ['warm', 'rainy']);
+  assert.equal(normalizeTrip({ ...base, season: 'monsoon' }).season, '');
+  assert.deepEqual(normalizeTrip({ ...base, conditions: 'hot' }).conditions, []);
+  assert.deepEqual(normalizeTrip({ ...base, climate: 'cold' }).conditions, ['cold']);
+  assert.deepEqual(normalizeTrip({ ...base, climate: 'mild' }).conditions, ['cool']);
+  assert.deepEqual(normalizeTrip({ ...base, climate: 'warm', conditions: ['rainy'] }).conditions, ['rainy']); // new field wins
+  assert.equal('climate' in normalizeTrip({ ...base, climate: 'cold' }), false);
+});
+
+test('season and weather round-trip through backup and are copied to a return trip', async () => {
+  const { store } = await fresh();
+  const t = mk(store, { name: 'Wet fall', season: 'fall', conditions: ['cool', 'rainy'] });
+  assert.ok(tripItems(store.state, t.id).some((i) => i.name === 'Rain jacket'));
+  const back = store.createReturnTrip(t.id);
+  assert.deepEqual([back.season, back.conditions], ['fall', ['cool', 'rainy']]);
+  const parsed = parseBackup(JSON.stringify(store.exportData()));
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.data.trips.find((x) => x.id === t.id).conditions, ['cool', 'rainy']);
+  assert.equal(parsed.data.trips.find((x) => x.id === t.id).season, 'fall');
 });

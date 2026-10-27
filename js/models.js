@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
 export const SCHEMA_VERSION = 1;
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.1';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -9,6 +9,7 @@ export const CATEGORY_PRESETS = [
   { id: 'electronics', label: 'Electronics', icon: 'plug' },
   { id: 'documents', label: 'Documents', icon: 'file' },
   { id: 'essentials', label: 'Essentials', icon: 'star' },
+  { id: 'camping', label: 'Camping gear', icon: 'camping' },
   { id: 'misc', label: 'Miscellaneous', icon: 'box' },
 ];
 
@@ -21,11 +22,23 @@ export const TRIP_TYPES = [
   { id: 'custom', label: 'Custom', icon: 'sliders', days: 4 },
 ];
 
-export const CLIMATES = [
-  { id: '', label: 'No preference' },
-  { id: 'warm', label: 'Warm' },
-  { id: 'mild', label: 'Mild / changeable' },
-  { id: 'cold', label: 'Cold' },
+export const SEASONS = [
+  { id: '', label: 'Not set' },
+  { id: 'spring', label: 'Spring' },
+  { id: 'summer', label: 'Summer' },
+  { id: 'fall', label: 'Fall' },
+  { id: 'winter', label: 'Winter' },
+];
+
+/** What the user expects outside. Several can apply (e.g. warm days, rainy). */
+export const CONDITIONS = [
+  { id: 'hot', label: 'Hot', icon: 'sun' },
+  { id: 'warm', label: 'Warm', icon: 'sun' },
+  { id: 'cool', label: 'Cool', icon: 'wind' },
+  { id: 'cold', label: 'Cold', icon: 'winter' },
+  { id: 'rainy', label: 'Rainy', icon: 'rain' },
+  { id: 'snowy', label: 'Snowy', icon: 'winter' },
+  { id: 'windy', label: 'Windy', icon: 'wind' },
 ];
 
 export const TRANSPORTS = [
@@ -42,6 +55,7 @@ export const BAG_KINDS = [
   { id: 'carry-on', label: 'Carry-on', icon: 'suitcase' },
   { id: 'checked', label: 'Checked', icon: 'luggage' },
   { id: 'backpack', label: 'Backpack', icon: 'backpack' },
+  { id: 'camping', label: 'Camping gear', icon: 'camping' },
   { id: 'other', label: 'Other bag', icon: 'box' },
 ];
 
@@ -73,7 +87,10 @@ export const LIMITS = {
 const ids = (list) => list.map((x) => x.id);
 const TRIP_TYPE_IDS = ids(TRIP_TYPES);
 const TRANSPORT_IDS = ids(TRANSPORTS);
-const CLIMATE_IDS = ids(CLIMATES);
+const SEASON_IDS = ids(SEASONS);
+const CONDITION_IDS = ids(CONDITIONS);
+// pre-1.1.1 data used a single `climate` value
+const LEGACY_CLIMATE = { warm: ['warm'], mild: ['cool'], cold: ['cold'] };
 const BAG_KIND_IDS = ids(BAG_KINDS);
 const PRIORITY_IDS = ids(PRIORITIES);
 const PHASE_IDS = ids(TASK_PHASES);
@@ -140,6 +157,11 @@ export function categoryMeta(id) {
   return preset || { id, label: id, icon: 'box' };
 }
 
+export function normalizeConditions(v) {
+  if (!Array.isArray(v)) return [];
+  return CONDITION_IDS.filter((id) => v.includes(id)); // canonical order, deduplicated, unknown dropped
+}
+
 export function normalizeTrip(raw) {
   if (!isObj(raw) || !isId(raw.id)) return null;
   const destination = cleanText(raw.destination, LIMITS.destination);
@@ -158,7 +180,8 @@ export function normalizeTrip(raw) {
     endDate,
     transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
     travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
-    climate: enumOr(raw.climate, CLIMATE_IDS, ''),
+    season: enumOr(raw.season, SEASON_IDS, ''),
+    conditions: normalizeConditions(raw.conditions ?? LEGACY_CLIMATE[raw.climate]),
     notes: cleanMultiline(raw.notes, LIMITS.notes),
     returnOf: isId(raw.returnOf) ? raw.returnOf : '', // set on a journey-home trip; points at the original
     isDemo: raw.isDemo === true, // sample data, removable from Settings

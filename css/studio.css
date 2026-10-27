@@ -509,6 +509,21 @@
   color: #7a4c00;
 }
 
+.tok-camping .tok-a {
+  inset: 6px 3px 6px;
+  background: var(--tok);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.tok-camping .tok-b {
+  left: 18px;
+  right: 18px;
+  top: 22px;
+  bottom: 6px;
+  background: #123d40;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
 .tok-misc .tok-a {
   inset: 9px 6px 5px;
   border-radius: 5px;

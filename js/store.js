@@ -104,7 +104,7 @@ export function createStore(adapter) {
       tasks = tripTasks(state, source.id).map((t, order) => makeTask({ ...t, order, tripId: trip.id, done: false }));
     } else {
       if (templateItems) seeds = templateItems;
-      else if (generate) seeds = generatePackingList({ type: trip.type, days, travelers: trip.travelers, bagKinds: kinds, climate: trip.climate });
+      else if (generate) seeds = generatePackingList({ type: trip.type, days, travelers: trip.travelers, bagKinds: kinds, season: trip.season, conditions: trip.conditions });
       if (withTasks) tasks = generateTasks({ transport: trip.transport }).map((g, order) => makeTask({ ...g, order, tripId: trip.id }));
     }
     const items = seeds
@@ -395,7 +395,8 @@ export function createStore(adapter) {
       name: name || `${src.name} — return`,
       destination: '',
       type: src.type,
-      climate: src.climate,
+      season: src.season,
+      conditions: src.conditions,
       travelers: src.travelers,
       transport: src.transport,
       startDate: src.endDate || src.startDate,
@@ -429,7 +430,7 @@ export function createStore(adapter) {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
     const trip = createTrip(
-      { name: 'Sample: Lisbon city break', destination: 'Lisbon, Portugal', type: 'city', startDate: ymd(21), endDate: ymd(25), transport: 'flight', travelers: 2, climate: 'mild', isDemo: true },
+      { name: 'Sample: Lisbon city break', destination: 'Lisbon, Portugal', type: 'city', startDate: ymd(21), endDate: ymd(25), transport: 'flight', travelers: 2, season: 'fall', conditions: ['cool', 'rainy'], isDemo: true },
       { bagKinds: ['carry-on', 'checked'] },
     );
     if (!trip) return null;

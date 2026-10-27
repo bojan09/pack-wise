@@ -134,9 +134,8 @@ export function tiles({ name, options, value, multi = false, onChange, label, cl
           'data-key': `${name}-${opt.id}`,
           onChange: (e) => {
             if (multi) {
-              if (e.target.checked) selected.add(opt.id);
-              else selected.delete(opt.id);
-              onChange?.([...selected]);
+              // read from the DOM so programmatic changes (e.g. auto-ticking a bag) are never stale
+              onChange?.([...group.querySelectorAll('input:checked')].map((i) => i.value));
             } else {
               onChange?.(opt.id);
             }

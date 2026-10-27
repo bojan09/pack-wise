@@ -22,7 +22,7 @@ const hash = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7)
 /** Small category-specific illustration used in the case, the tray and the item tiles. */
 export function tokenFace(item, { size = 'md' } = {}) {
   const color = PALETTE[hash(item.name) % PALETTE.length];
-  const cat = ['clothing', 'toiletries', 'electronics', 'documents', 'essentials'].includes(item.category) ? item.category : 'misc';
+  const cat = ['clothing', 'toiletries', 'electronics', 'documents', 'essentials', 'camping'].includes(item.category) ? item.category : 'misc';
   const face = h('span', { class: `tok tok-${cat} tok-${size}`, style: { '--tok': color }, 'aria-hidden': 'true' }, h('span', { class: 'tok-a' }), h('span', { class: 'tok-b' }));
   if (item.target > 1) face.append(h('span', { class: 'tok-count', text: `×${item.target}` }));
   return face;
