@@ -47,6 +47,12 @@ Every trip has an **Explore** page (packing-list header, trip menu, dashboard, s
 
 The catalog is a short editorial list (12 Balkan cities) with **no prices, hours or coordinates**; unsupported destinations get an honest empty state. See `docs/DESTINATION_DATA.md` for sources, licensing and limits.
 
+## Added in Phase 4 of the Discovery plan (v1.4.0): Taste the Destination
+
+The Explore page has a **Places | Taste** switch. *Taste* lists regional dishes, street food, desserts and non-alcoholic drinks for the trip's country (≈40 editorial entries across the 8 covered countries), with typical ingredients, where each is commonly found (markets, bakeries… never a named venue), and vegetarian / vegan / common-allergen tags. Filters (diet, "hide if often contains", category, Must-Try list) only appear when they change something. The heart adds a dish to the trip's **Must-Try list**; saved dishes get an "I tried it" tick and a short note, all local and offline.
+
+Diet and allergen tags describe a typical recipe, not a safety guarantee. See `docs/DESTINATION_DATA.md`.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

@@ -514,6 +514,24 @@ export function createStore(adapter) {
     return true;
   }
 
+  // tried / note are personal marks on an entry; an entry with nothing set is removed again
+  function patchEntry(tripId, kind, refId, patch) {
+    if (!find('trips', tripId)) return null;
+    const id = entryId(tripId, kind, refId);
+    const cur = find('entries', id);
+    const base = cur ? touch(cur) : makeEntry({ tripId, kind, refId, saved: false, order: state.entries.filter((e) => e.tripId === tripId).length });
+    const norm = normalizeEntry({ ...base, ...patch });
+    if (!norm) return null;
+    if (!norm.saved && !norm.tried && !norm.note) {
+      if (cur) commit({ remove: { entries: [id] } });
+      return norm;
+    }
+    commit({ put: { entries: [norm] } });
+    return norm;
+  }
+  const setTried = (tripId, kind, refId, tried) => patchEntry(tripId, kind, refId, { tried: tried === true });
+  const setNote = (tripId, kind, refId, note) => patchEntry(tripId, kind, refId, { note: String(note ?? '').trim() });
+
   const isSaved = (tripId, kind, refId) => Boolean(find('entries', entryId(tripId, kind, refId))?.saved);
 
   // ------------------------------------------------------- backup / import
@@ -595,6 +613,8 @@ export function createStore(adapter) {
     deleteTemplate,
     saveTripAsTemplate,
     setSaved,
+    setTried,
+    setNote,
     isSaved,
     createReturnTrip,
     loadDemo,

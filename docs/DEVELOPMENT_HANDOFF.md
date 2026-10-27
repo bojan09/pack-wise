@@ -54,6 +54,15 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## Discovery plan, Phase 4: Taste the Destination (v1.4.0)
+
+- `js/data/food.js` (editorial; no venues, prices, alcohol, pronunciations), `js/taste.js` (pure: country scoping, diet/allergen/category filters, grouping), `js/screens/taste.js` (lazy, precached), `Places | Taste` tabs via `guideTabs()` in `screens/shared.js`.
+- Food is keyed by country (cuisine is regional), resolved from the trip destination with the same `matchDestination`; ambiguous destinations show nothing; `?country=XX` browses another covered country without touching the trip.
+- Reuses schema v2 `entries` with `kind: 'food'`, `refId` = dish id. Added `store.setTried` / `store.setNote` (an entry with no saved/tried/note is removed). No schema change.
+- Diet filter keeps only items *definitely* suitable (`true`); `'varies'` items are hidden and counted in a hint. Allergen chips hide items listing that allergen; absence of a tag never means absence of the allergen (stated on the page).
+- Tests: unit `tests/unit/food.test.js`; e2e adds 7 `taste:` checks (+ taste in a11y/overflow/dark sweeps).
+- Known gaps: data is editorial, not verified against a live source; no images (category art only, by design: no unlicensed food photos); no pronunciation; diet/allergen filters are session state (not remembered).
+
 ## Discovery plan, Phase 3: Explore Destination (v1.3.0)
 
 Roadmap now follows `PackWise_Destination_Discovery_Extension.md`: Phase 3 Discovery (this), Phase 4 Food & Drink, Phase 5 My Trip Guide, Phase 6 final release (rescheduled). Gates: stop for approval after each.

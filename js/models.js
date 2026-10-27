@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
 export const SCHEMA_VERSION = 2; // v2 adds guide `entries` (saved places / dishes per trip)
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },

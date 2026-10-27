@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.3.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.4.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -444,7 +444,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
     assert.deepEqual(bad, [], `a11y issues on ${route}`);
   };
   const id = (await tripState(page)).trips[0].id;
-  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
+  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/taste`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
 });
 
 await test('reduced motion disables animations; page still usable', async ({ page }) => {
@@ -1500,7 +1500,7 @@ await test('dark theme: every screen renders without overflow and with readable 
   await skipWelcome(page);
   await createTrip(page);
   const id = await firstTrip(page);
-  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
+  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['taste', `/trip/${id}/taste`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
     await page.goto(`${BASE}#${route}`);
     await page.waitForTimeout(200);
     const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bg: getComputedStyle(document.body).backgroundColor }));
@@ -2037,7 +2037,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.3.0']);
+  assert.deepEqual(keys, ['packwise-v1.4.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2077,7 +2077,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.3.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.4.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2093,6 +2093,249 @@ await test('service worker update: new version waits, prompts, preserves data, t
 }, { sw: true });
 
 // --------------------------------------------------------- static checks
+// ============================================================ PHASE 4 (discovery): Taste the Destination
+const tastePath = (id, q = '') => `${BASE}#/trip/${id}/taste${q}`;
+const foodCards = (page) => page.locator('.food-card').count();
+
+await test('taste: food comes from the trip country, four categories, no venues/prices/alcohol rendered', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  await page.click('.guide-tab:has-text("Taste")'); // tabs switch between the two guides
+  await page.waitForSelector('.food-card');
+  assert.ok(page.url().endsWith(`/trip/${id}/taste`));
+  assert.equal(await page.locator('.guide-tab[aria-current=page]').innerText(), 'Taste');
+  const { FOOD } = await import('../../js/data/food.js');
+  const rs = FOOD.items.filter((i) => i.countries.includes('RS'));
+  assert.equal(await foodCards(page), rs.length);
+  assert.deepEqual((await page.locator('.food-card h3').allInnerTexts()).map((t) => t.split(' · ')[0]).sort(), rs.map((i) => i.name).sort());
+  assert.deepEqual(await page.locator('.guide-section h2').allInnerTexts(), FOOD.categories.filter((c) => rs.some((i) => i.category === c.id)).map((c) => c.label));
+  const text = await page.locator('.taste-screen').innerText();
+  assert.ok(!/[€$£]\s?\d|\d\s?(€|EUR|RSD)\b|\b\d{1,2}:\d{2}\b/.test(text), 'no prices or hours');
+  assert.ok(!/\b(wine|beer|rakija|brandy|vodka)\b/i.test(text), 'no alcohol');
+  assert.match(text, /Not a safety guarantee/);
+  assert.match(text, /Editorial, regional, not live/);
+  // every card shows what / typical ingredients / where found / diet lines
+  const bad = await page.evaluate(() => [...document.querySelectorAll('.food-card')].filter((c) => !/Typically:/.test(c.textContent) || !/Commonly found:/.test(c.textContent) || !/Vegetarian:/.test(c.textContent)).map((c) => c.querySelector('h3').textContent));
+  assert.deepEqual(bad, []);
+});
+
+await test('taste: several countries, multi-country trip, unsupported and ambiguous destinations', async ({ page }) => {
+  await skipWelcome(page);
+  const { FOOD } = await import('../../js/data/food.js');
+  for (const [dest, code] of [['Zagreb, Croatia', 'HR'], ['Tiranë', 'AL'], ['Sofia', 'BG'], ['Ljubljana', 'SI']]) {
+    await createTrip(page, { dest });
+    const id = (await tripState(page)).trips.find((t) => t.name === dest).id;
+    await page.goto(tastePath(id));
+    await page.waitForSelector('.food-card');
+    assert.equal(await foodCards(page), FOOD.items.filter((i) => i.countries.includes(code)).length, dest);
+  }
+  await createTrip(page, { dest: 'Belgrade and Tirana' });
+  const multi = (await tripState(page)).trips.find((t) => t.name === 'Belgrade and Tirana').id;
+  await page.goto(tastePath(multi));
+  await page.waitForSelector('.food-card');
+  assert.equal(await foodCards(page), FOOD.items.filter((i) => i.countries.some((c) => c === 'RS' || c === 'AL')).length);
+  // country alone is enough for food
+  await createTrip(page, { dest: 'Bulgaria' });
+  const bg = (await tripState(page)).trips.find((t) => t.name === 'Bulgaria').id;
+  await page.goto(tastePath(bg));
+  await page.waitForSelector('.food-card');
+  assert.ok(await foodCards(page) > 5);
+  // unsupported
+  await createTrip(page, { dest: 'Rome, Italy' });
+  const rome = (await tripState(page)).trips.find((t) => t.name === 'Rome, Italy').id;
+  await page.goto(tastePath(rome));
+  await page.waitForSelector('text=No food guide for');
+  assert.equal(await foodCards(page), 0);
+  assert.ok(await page.locator('.covered .chip').count() >= 8);
+  // browsing another country does not change the trip
+  const before = await tripState(page);
+  await page.click('.covered .chip:has-text("Serbia")');
+  await page.waitForSelector('.food-card');
+  assert.match(await page.locator('.banner-info').innerText(), /Browsing Serbia/);
+  assert.deepEqual((await tripState(page)).trips, before.trips);
+  // ambiguous: Split + Montenegro conflict is not guessed
+  await createTrip(page, { dest: 'Split, Montenegro' });
+  const amb = (await tripState(page)).trips.find((t) => t.name === 'Split, Montenegro').id;
+  await page.goto(tastePath(amb));
+  await page.waitForSelector('.banner-warn');
+  assert.equal(await foodCards(page), 0);
+});
+
+await test('taste: dietary and allergen filters work on the real catalog and unhelpful controls are hidden', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Sarajevo' });
+  const id = await firstTrip(page);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  const { FOOD } = await import('../../js/data/food.js');
+  const ba = FOOD.items.filter((i) => i.countries.includes('BA'));
+  await page.click('.chip:has-text("Vegetarian")');
+  const veg = await page.locator('.food-card h3').allInnerTexts();
+  assert.deepEqual(veg.map((t) => t.split(' · ')[0]).sort(), ba.filter((i) => i.vegetarian === true).map((i) => i.name).sort());
+  assert.ok(!veg.includes('Burek'), 'burek only *may* be vegetarian, so the filter does not claim it');
+  assert.match(await page.locator('.taste-screen').innerText(), /more items? may have a vegetarian version/);
+  await page.click('.chip:has-text("Vegan")');
+  assert.ok(await foodCards(page) < veg.length);
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.food-card')].every((c) => /Vegan: Usually/.test(c.textContent))));
+  await page.click('.chip:has-text("Vegan")'); // toggle off
+  await page.click('.chip:has-text("Any diet")');
+  // allergen avoidance
+  await page.click('[aria-label="Hide dishes that often contain"] .chip:has-text("Gluten")');
+  assert.equal(await foodCards(page), ba.filter((i) => !i.allergens.includes('gluten')).length);
+  assert.equal(await page.locator('.food-card .tag-allergen:has-text("Gluten")').count(), 0);
+  // category
+  await page.click('[aria-label="Category"] .chip:has-text("Local Drinks")');
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.food-card')].every((c) => c.classList.contains('cat-drink'))));
+  // combination with no result → clear filters
+  await page.click('[aria-label="Hide dishes that often contain"] .chip:has-text("Dairy")');
+  await page.click('.chip:has-text("Vegan")');
+  await page.click('.chip:has-text("My Must-Try list")');
+  await page.waitForSelector('text=Your Must-Try list is empty');
+  await page.click('button:has-text("Clear filters")');
+  assert.equal(await foodCards(page), ba.length);
+  // a country whose items are all one diet hides that control: Montenegro has mixed so check SI keeps controls, controls only if meaningful
+  const hidden = await page.evaluate(async () => {
+    const { availableDietFilters } = await import('./js/taste.js');
+    const { FOOD } = await import('./js/data/food.js');
+    return availableDietFilters(FOOD.items.filter((i) => i.vegetarian === true)).diets;
+  });
+  assert.ok(!hidden.includes('vegetarian'));
+});
+
+await test('taste: Must-Try list, tried state and notes persist across reload and are per-trip', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Sarajevo' });
+  await createTrip(page, { dest: 'Skopje' });
+  const trips = (await tripState(page)).trips;
+  const sar = trips.find((t) => t.name === 'Sarajevo').id;
+  const sko = trips.find((t) => t.name === 'Skopje').id;
+  const packBefore = await tripState(page);
+  await page.goto(tastePath(sar));
+  await page.waitForSelector('.food-card');
+  assert.equal(await page.locator('.food-card .food-extra').count(), 0, 'tried/note only appear once saved');
+  await page.click('.save-btn[aria-label^="Add Ćevapi"]');
+  await page.click('.save-btn[aria-label^="Add Baklava"]');
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 2);
+  await page.check('.food-card[data-ref=cevapi] input[type=checkbox]');
+  await page.fill('.food-card[data-ref=cevapi] .note-input', 'with onion');
+  await page.press('.food-card[data-ref=cevapi] .note-input', 'Tab');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.refId === 'cevapi' && e.tried && e.note === 'with onion'));
+  assert.equal(await page.locator('.food-card[data-ref=cevapi] .adm-badge').innerText(), 'Tried');
+  await reloadSettled(page);
+  await page.waitForSelector('.food-card');
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 2);
+  assert.equal(await page.locator('.food-card[data-ref=cevapi] input[type=checkbox]').isChecked(), true);
+  assert.equal(await page.inputValue('.food-card[data-ref=cevapi] .note-input'), 'with onion');
+  assert.match(await page.locator('.dest-card').innerText(), /2 on your list, 1 tried/);
+  await page.click('.chip:has-text("My Must-Try list")');
+  assert.equal(await foodCards(page), 2);
+  // per trip: Skopje does not see Sarajevo's list
+  await page.goto(tastePath(sko));
+  await page.waitForSelector('.food-card');
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 0);
+  // un-saving keeps the user's own tried mark rather than silently losing it, then clearing removes the record
+  await page.goto(tastePath(sar));
+  await page.waitForSelector('.food-card');
+  await page.click('.save-btn[aria-label^="On your Must-Try list: Baklava"]');
+  assert.equal((await tripState(page)).entries.filter((e) => e.kind === 'food' && e.tripId === sar).length, 1);
+  // packing data untouched
+  const after = await tripState(page);
+  const byId = (l) => [...l].sort((a, b) => a.id.localeCompare(b.id)); // storage order is by key
+  for (const k of ['trips', 'bags', 'items', 'tasks']) assert.deepEqual(byId(after[k]), byId(packBefore[k]), k);
+  // no horizontal overflow at 360px
+  await page.setViewportSize({ width: 360, height: 740 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+});
+
+await test('taste: backup/restore, duplicate and delete cover the Must-Try list', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Zagreb' });
+  const id = await firstTrip(page);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  await page.click('.save-btn[aria-label^="Add Fritule"]');
+  await page.check('.food-card[data-ref=fritule] input[type=checkbox]');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.refId === 'fritule' && e.tried));
+  const before = await tripState(page);
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  assert.ok(JSON.parse(json).data.entries.some((e) => e.kind === 'food' && e.refId === 'fritule' && e.tried === true));
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 1);
+  assert.deepEqual((await tripState(page)).entries, before.entries);
+  // duplicate copies the list but resets tried
+  const copy = await page.evaluate((tid) => window.__packwise.store.duplicateTrip(tid), id);
+  const copied = (await tripState(page)).entries.filter((e) => e.tripId === copy.id && e.kind === 'food');
+  assert.deepEqual(copied.map((e) => [e.refId, e.saved, e.tried]), [['fritule', true, false]]);
+  await page.evaluate((tid) => window.__packwise.store.deleteTrip(tid), id);
+  assert.deepEqual((await tripState(page)).entries.map((e) => e.tripId), [copy.id]);
+});
+
+await test('taste: keyboard and screen-reader semantics', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Ohrid' });
+  const id = await firstTrip(page);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  assert.equal(await page.locator('h1').count(), 1);
+  assert.equal(await page.locator('nav.guide-tabs').getAttribute('aria-label'), 'Trip guide');
+  const issues = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('#view button, #view a[href], #view input')) {
+      const name = (el.getAttribute('aria-label') || el.textContent || el.labels?.[0]?.textContent || '').trim();
+      if (!name) out.push(el.outerHTML.slice(0, 80));
+    }
+    for (const b of document.querySelectorAll('.save-btn')) if (!b.hasAttribute('aria-pressed')) out.push('save without aria-pressed');
+    return out;
+  });
+  assert.deepEqual(issues, []);
+  // keyboard: focus a heart, Space toggles, focus stays on it after the re-render
+  await page.focus('.save-btn[aria-label^="Add Tavče"]');
+  await page.keyboard.press('Space');
+  await page.waitForSelector('.save-btn.is-saved');
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-key')), 'save-tavce-gravce');
+  // the note field has an accessible label and the live region announces counts
+  assert.match(await page.locator('.note-input').first().getAttribute('id'), /^note-/);
+  assert.match(await page.locator('.taste-screen p.sr-only[aria-live=polite]').innerText(), /items? shown/);
+});
+
+await test('taste: reduced motion and offline with saved dishes', async ({ page, ctx }) => {
+  await skipWelcome(page);
+  await page.goto(BASE);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await createTrip(page, { dest: 'Ljubljana' });
+  const id = await firstTrip(page);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller);
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  assert.ok(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.place-grid')).animationDuration)) > 0.1);
+  await page.click('.save-btn[aria-label^="Add Potica"]');
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.food-card'); // lazily loaded screen + food catalog come from the offline cache
+  assert.equal(await page.locator('.save-btn.is-saved').count(), 1);
+  await page.check('.food-card[data-ref=potica] input[type=checkbox]');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.some((e) => e.refId === 'potica' && e.tried));
+  await ctx.setOffline(false);
+  await reloadSettled(page);
+  assert.equal((await tripState(page)).entries.find((e) => e.refId === 'potica').tried, true);
+  await page.goto(`${BASE}#/settings`);
+  await page.click('label.seg-opt:has-text("Reduced")');
+  await page.goto(tastePath(id));
+  await page.waitForSelector('.food-card');
+  assert.ok(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.place-grid')).animationDuration)) < 0.01);
+}, { sw: true });
+
+
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   const listed = new Set([...sw.matchAll(/^\s+'([^']+)',$/gm)].map((m) => m[1]));

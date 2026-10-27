@@ -10,7 +10,7 @@ import { exploreMessage } from '../companion.js';
 import { getPrefs } from '../prefs.js';
 import { getTrip, tripEntries } from '../selectors.js';
 import { plural } from '../format.js';
-import { pageHeader, tripSubtitle } from './shared.js';
+import { guideTabs, pageHeader, tripSubtitle } from './shared.js';
 
 const KIND = Object.fromEntries(KINDS.map((k) => [k.id, k]));
 const SETTING_LABEL = { indoor: 'Indoors', outdoor: 'Outdoors', both: 'Indoors & outdoors' };
@@ -125,6 +125,7 @@ export function ExploreScreen(ctx) {
           'div',
           { class: 'screen explore-screen' },
           header,
+          guideTabs(tripId, 'places'),
           tip,
           conflict
             ? h('div', { class: 'banner banner-warn' }, icon('alert', { size: 18 }), h('span', { text: `Your trip says “${asked}”, but the guide covers ${conflict.destination.name}, ${conflict.destination.country}. These are different places, so nothing is shown automatically.` }), h('a', { class: 'link', href: `#/trip/${tripId}/explore?dest=${conflict.destination.id}`, text: `Show ${conflict.destination.name}, ${conflict.destination.country}` }))
@@ -169,6 +170,7 @@ export function ExploreScreen(ctx) {
         'div',
         { class: 'screen explore-screen' },
         header,
+        guideTabs(tripId, 'places'),
         h('section', { class: 'card dest-card' }, h('div', { class: 'dest-title' }, h('span', { class: 'dest-icon' }, icon('compass', { size: 22 })), h('div', {}, h('h2', { class: 'card-title', text: `${dest.name}, ${dest.country}` }), h('p', { class: 'muted small', text: `${plural(dest.places.length, 'place')} · editorial guide reviewed ${CATALOG.reviewedAt}` }))), stopChooser),
         ...notices,
         tip,

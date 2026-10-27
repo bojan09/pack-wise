@@ -266,3 +266,87 @@
 [data-motion='reduced'] .place-grid {
   animation: none;
 }
+
+/* ===================== Taste the destination ===================== */
+.guide-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.guide-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.guide-tab.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 12%));
+}
+
+.cat-dish { --kind-a: #e9a77a; --kind-b: #b9603f; }
+.cat-street { --kind-a: #f2c26b; --kind-b: #a8691a; }
+.cat-dessert { --kind-a: #f2998a; --kind-b: #a63f58; }
+.cat-drink { --kind-a: #6fb4e8; --kind-b: #2467b0; }
+
+.food-means {
+  font-weight: 500;
+}
+
+.diet-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.8rem;
+}
+
+.diet-yes { color: var(--tone-teal-ink); font-weight: 700; }
+.diet-ask { color: var(--tone-sand-ink, var(--muted)); }
+.diet-no { color: var(--muted); }
+
+.tag-allergen {
+  background: var(--tone-coral, var(--surface-2));
+  color: var(--tone-coral-ink, var(--text));
+}
+
+.food-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line, rgb(0 0 0 / 8%));
+}
+
+.tried-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-weight: 600;
+}
+
+.note-input {
+  width: 100%;
+}
+
+.chips-label {
+  align-self: center;
+}
+
+.covered .chips-inner {
+  flex-wrap: wrap;
+}

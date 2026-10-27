@@ -53,6 +53,18 @@ export function companionMessage({ screen = 'dashboard', trip, items, tasks, tri
  * Tip for the Explore page. `status` comes from matchDestination().
  * @returns {{id: string, text: string, mood: string}|null}
  */
+export function tasteMessage({ status, countryLabel = '', asked = '', saved = 0, dismissed = [] }) {
+  const gone = new Set(dismissed);
+  const list = [];
+  if (status !== 'covered') {
+    list.push({ id: `taste-none:${asked}`, text: `I don’t have a food guide for “${asked}” yet, and I won’t make one up. You can browse a covered country below.`, mood: 'wave' });
+  } else {
+    if (saved > 0) list.push({ id: `taste-saved:${countryLabel}`, text: `${saved} on your Must-Try list. Tick “I tried it” as you go; it stays on this device.`, mood: 'happy' });
+    list.push({ id: `taste-intro:${countryLabel}`, text: `Hungry? Here are regional favourites for ${countryLabel}. Check ingredients with the cook if you have allergies or a special diet.`, mood: 'happy' });
+  }
+  return list.find((m) => !gone.has(m.id)) || null;
+}
+
 export function exploreMessage({ status, destName = '', asked = '', saved = 0, dismissed = [] }) {
   const gone = new Set(dismissed);
   const list = [];

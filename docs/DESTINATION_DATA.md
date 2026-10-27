@@ -25,5 +25,8 @@ The sandbox denied these hosts; allowing them would let a build script verify an
 ## Matching rules (`js/guide.js`)
 Trip destination text is split into stops (`,` `;` `/` `-` `→` "and" "to" `&` parentheses), normalized (case, diacritics, `đ`), and matched against city names and aliases only. No fuzzy matching: "Belgrad" or "Spl" match nothing. A covered country alone offers its covered cities; a city with a conflicting covered country ("Split, Montenegro") is flagged ambiguous and nothing is shown automatically; uncovered stops are reported, not dropped silently.
 
+## Food & drink (Phase 4)
+`js/data/food.js`: about 40 regional specialities, scoped by country (cuisine does not follow city limits). Same editorial status: written from general knowledge, not checked against a live source, versioned. Deliberately absent: restaurants or vendors, prices, alcoholic drinks, pronunciation guides, photos. "Commonly found" lists venue *types* only (markets, bakeries, grill houses…). `vegetarian`/`vegan` are `true`, `false` or `'varies'`; `allergens` lists what a typical recipe commonly contains and never implies absence. `tests/unit/food.test.js` enforces the field whitelist and rejects price, alcohol, pronunciation and ranking wording.
+
 ## Known limitations
 Coverage is 12 cities; a place missing from the list is not a statement that it is unworthy. Descriptions are short and general. Seasonality and accessibility notes are omitted because they could not be verified. Entries are stored per trip by stable id (`<destination>/<place>`); if a place is later removed from the catalog its saved entry would point at nothing (Phase 5 must show those as "no longer in the guide").
