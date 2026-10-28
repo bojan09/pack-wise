@@ -1,175 +1,196 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ONLINE_HOSTS, OnlineError, apiUrl, classify, clearCache, coordsOf, coordsText, findPlaces, friendlyError, getJson, lookup, nearby, readCache, writeCache } from '../../js/online.js';
+import { NOMINATIM, ONLINE_HOSTS, OVERPASS_ENDPOINTS, OnlineError, clearCache, coordsText, describe, findPlaces, friendlyError, getJson, kindOf, lookup, nearby, overpassQuery, parseElements, readCache, recallCandidates, rememberCandidates, withParams, writeCache } from '../../js/online.js';
 
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
-const makeLocalStorage = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), _m: m }; };
+const makeLocalStorage = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
 
-/** A fake Wikidata + Wikipedia. `log` records every URL requested. */
-const fakeWeb = (log = []) => async (url) => {
-  log.push(url);
+const NOMINATIM_BODY = [
+  { place_id: 1, osm_type: 'relation', osm_id: 1234, lat: '41.7156', lon: '21.7756', name: 'Veles', display_name: 'Veles, Municipality of Veles, North Macedonia', type: 'administrative', place_rank: 16 },
+  { place_id: 2, osm_type: 'node', osm_id: 99, lat: '42.5', lon: '25.1', name: 'Veles', display_name: 'Veles, Obshtina X, Bulgaria', type: 'village', place_rank: 19 },
+  { place_id: 3, osm_type: 'relation', osm_id: 5, lat: '41.6', lon: '21.7', name: 'North Macedonia', display_name: 'North Macedonia', type: 'administrative', place_rank: 4 },
+  { place_id: 4, osm_type: 'bogus', osm_id: 1, lat: '1', lon: '1', name: 'x' },
+  { place_id: 5, osm_type: 'node', osm_id: 7, lat: 'NaN', lon: '1', name: 'bad coords' },
+];
+const ELEMENTS = [
+  { type: 'node', id: 11, lat: 41.72, lon: 21.78, tags: { name: 'Clock Tower', tourism: 'attraction', attraction: 'clock_tower', fee: 'no', wheelchair: 'yes', website: 'https://example.org/tower', wikidata: 'Q1' } },
+  { type: 'way', id: 12, center: { lat: 41.71, lon: 21.77 }, tags: { name: 'City Museum', 'name:en': 'Veles City Museum', tourism: 'museum', fee: 'yes', opening_hours: 'Tu-Su 09:00-17:00', description: 'Local history' } },
+  { type: 'node', id: 13, lat: 41.711, lon: 21.771, tags: { name: 'St. Panteleimon', amenity: 'place_of_worship', religion: 'christian', wikidata: 'Q2' } },
+  { type: 'way', id: 14, center: { lat: 41.71, lon: 21.77 }, tags: { name: 'City Museum', tourism: 'museum' } },
+  { type: 'relation', id: 15, center: { lat: 41.7, lon: 21.7 }, tags: { name: 'Babuna waterfall', waterway: 'waterfall' } },
+  { type: 'node', id: 16, lat: 41.7, lon: 21.7, tags: { name: 'A shop', shop: 'bakery' } },
+  { type: 'node', id: 17, lat: 41.7, lon: 21.7, tags: { tourism: 'museum' } },
+  { type: 'node', id: 18, lat: 99, lon: 21.7, tags: { name: 'Off the map', tourism: 'museum' } },
+  { id: 19, tags: { name: 'No type', tourism: 'museum' } },
+];
+
+/** A fake Nominatim + Overpass. `log` records every request. */
+const fakeWeb = (log = [], { overpass = ELEMENTS } = {}) => async (url, init = {}) => {
+  log.push({ url, init });
   const u = new URL(url);
-  const p = u.searchParams;
-  if (u.hostname === 'www.wikidata.org') {
-    if (p.get('action') === 'wbsearchentities') {
-      return ok({ search: [{ id: 'Q1', label: 'Veles', description: 'city in North Macedonia' }, { id: 'Q2', label: 'Veles', description: 'village in Bulgaria' }, { id: 'bad<id>', label: 'x' }] });
-    }
-    if (p.get('action') === 'wbgetclaims') {
-      return p.get('entity') === 'Q9' ? ok({ claims: {} }) : ok({ claims: { P625: [{ mainsnak: { datavalue: { value: { latitude: 41.7156, longitude: 21.7756 } } } }] } });
-    }
-  }
-  if (u.hostname === 'en.wikipedia.org') {
-    if (p.get('list') === 'geosearch') {
-      return ok({ query: { geosearch: [
-        { pageid: 10, title: 'Church of St. Panteleimon', lat: 41.71, lon: 21.77, dist: 300 },
-        { pageid: 11, title: 'Veles Clock Tower', lat: 41.72, lon: 21.78, dist: 120 },
-        { pageid: 12, title: 'Some Village', lat: 41.8, lon: 21.8, dist: 900 },
-        { pageid: 13, title: 'Mystery', lat: 41.7, lon: 21.7, dist: 50 },
-        { pageid: 14, title: 'Vardar', lat: 41.71, lon: 21.76, dist: 700 },
-        { lat: 1, lon: 1, title: 'no id' },
-      ] } });
-    }
-    if (p.get('prop') === 'description') {
-      const d = { 10: 'Orthodox church in Veles', 11: 'Clock tower in Veles, North Macedonia', 12: 'Village in North Macedonia', 14: 'River in North Macedonia' };
-      return ok({ query: { pages: p.get('pageids').split('|').map((id) => ({ pageid: Number(id), title: 't', ...(d[id] ? { description: d[id] } : {}) })) } });
-    }
-  }
+  if (u.hostname === 'nominatim.openstreetmap.org') return ok(NOMINATIM_BODY);
+  if (u.hostname === 'overpass-api.de' || u.hostname === 'overpass.kumi.systems') return ok({ elements: overpass });
   throw new Error(`unexpected ${url}`);
 };
 
-test('requests only go to the two allowed hosts, over https, with no cookies or referrer', async () => {
+test('requests only go to the allowed OpenStreetMap hosts, over https, as plain GETs without cookies', async () => {
   const seen = [];
-  const f = async (url, init) => { seen.push([url, init]); return ok({ search: [] }); };
-  await getJson(apiUrl('https://www.wikidata.org/w/api.php', { action: 'x' }), { fetchImpl: f });
-  assert.deepEqual([seen[0][1].credentials, seen[0][1].referrerPolicy, seen[0][1].method, seen[0][1].redirect], ['omit', 'no-referrer', 'GET', 'error']);
-  for (const bad of ['https://evil.example/api', 'http://www.wikidata.org/w/api.php', 'https://www.wikidata.org.evil.example/', 'https://en.wikipedia.org@evil.example/', 'javascript:alert(1)', 'not a url']) {
+  const f = async (url, init) => { seen.push([url, init]); return ok([]); };
+  await getJson(withParams(NOMINATIM, { q: 'x' }), { fetchImpl: f });
+  await getJson(withParams(OVERPASS_ENDPOINTS[0], { data: 'x' }), { fetchImpl: f });
+  assert.deepEqual(seen.map((s) => [s[1].method, s[1].credentials, s[1].redirect]), [['GET', 'omit', 'error'], ['GET', 'omit', 'error']]);
+  assert.equal(seen[0][1].referrerPolicy, 'origin', 'Nominatim asks for an identifying referrer: the site origin only');
+  assert.equal(seen[1][1].referrerPolicy, 'no-referrer');
+  for (const bad of ['https://evil.example/api', 'http://nominatim.openstreetmap.org/search', 'https://nominatim.openstreetmap.org.evil.example/', 'https://overpass-api.de@evil.example/', 'https://en.wikipedia.org/w/api.php', 'javascript:alert(1)', 'not a url']) {
     await assert.rejects(getJson(bad, { fetchImpl: f }), (e) => e.code === 'blocked', bad);
   }
-  assert.equal(seen.length, 1, 'refused URLs never reached fetch');
-  assert.deepEqual(ONLINE_HOSTS, ['www.wikidata.org', 'en.wikipedia.org']);
+  assert.equal(seen.length, 2, 'refused URLs never reached fetch');
+  assert.deepEqual(ONLINE_HOSTS, ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems']);
+  assert.ok(OVERPASS_ENDPOINTS.every((e) => ONLINE_HOSTS.includes(new URL(e).hostname)));
 });
 
-test('apiUrl encodes user input safely and always asks for CORS-friendly JSON', () => {
-  const u = new URL(apiUrl('https://www.wikidata.org/w/api.php', { search: 'a&b=c#d é' }));
-  assert.equal(u.searchParams.get('search'), 'a&b=c#d é');
-  assert.equal(u.search.includes('&b=c'), false, 'the ampersand is encoded, not a new parameter');
-  assert.deepEqual([u.searchParams.get('origin'), u.searchParams.get('format'), u.searchParams.get('formatversion')], ['*', 'json', '2']);
-});
-
-test('findPlaces: ambiguity is returned, bad ids dropped, input validated', async () => {
+test('findPlaces: ambiguity is returned with region and country, regions are flagged, junk dropped, input validated', async () => {
   const log = [];
   const r = await findPlaces('  Veles  ', { fetchImpl: fakeWeb(log) });
-  assert.deepEqual(r, [{ qid: 'Q1', label: 'Veles', description: 'city in North Macedonia' }, { qid: 'Q2', label: 'Veles', description: 'village in Bulgaria' }]);
-  assert.equal(new URL(log[0]).searchParams.get('search'), 'Veles');
+  assert.deepEqual(r.map((c) => [c.id, c.label, c.description, c.large]), [['r1234', 'Veles', 'Municipality of Veles, North Macedonia', false], ['n99', 'Veles', 'Obshtina X, Bulgaria', false], ['r5', 'North Macedonia', 'administrative', true]]);
+  assert.deepEqual([r[0].lat, r[0].lon], [41.7156, 21.7756]);
+  const sent = new URL(log[0].url).searchParams;
+  assert.deepEqual([sent.get('q'), sent.get('format'), sent.get('limit'), sent.get('accept-language')], ['Veles', 'jsonv2', '8', 'en']);
   for (const q of ['', ' ', 'a', null, undefined]) await assert.rejects(findPlaces(q, { fetchImpl: fakeWeb() }), (e) => e.code === 'input');
-  const long = await (async () => { const l = []; await findPlaces('x'.repeat(500), { fetchImpl: fakeWeb(l) }); return new URL(l[0]).searchParams.get('search'); })();
-  assert.equal(long.length, 80);
+  const l = []; await findPlaces('x'.repeat(500), { fetchImpl: fakeWeb(l) });
+  assert.equal(new URL(l[0].url).searchParams.get('q').length, 80);
+  const l2 = []; await findPlaces('a&b=c#d', { fetchImpl: fakeWeb(l2) });
+  assert.equal(new URL(l2[0].url).searchParams.get('q'), 'a&b=c#d', 'user input stays one encoded parameter');
   await assert.rejects(findPlaces('Veles', { fetchImpl: async () => ok({ nope: 1 }) }), (e) => e.code === 'format');
-  await assert.rejects(findPlaces('Veles', { fetchImpl: async () => ok({ error: { code: 'x' } }) }), (e) => e.code === 'format');
 });
 
-test('coordsOf: parses P625, null when missing, rejects bad ids', async () => {
-  assert.deepEqual(await coordsOf('Q1', { fetchImpl: fakeWeb() }), { lat: 41.7156, lon: 21.7756 });
-  assert.equal(await coordsOf('Q9', { fetchImpl: fakeWeb() }), null);
-  await assert.rejects(coordsOf('Q1; DROP', { fetchImpl: fakeWeb() }), (e) => e.code === 'input');
-  const weird = async () => ok({ claims: { P625: [{ mainsnak: { datavalue: { value: { latitude: 999, longitude: 'x' } } } }] } });
-  assert.equal(await coordsOf('Q1', { fetchImpl: weird }), null, 'out-of-range coordinates are refused');
+test('kindOf maps OpenStreetMap tags to the guide kinds, and ignores everything else', () => {
+  const cases = [[{ tourism: 'museum' }, 'museum'], [{ tourism: 'gallery' }, 'museum'], [{ amenity: 'place_of_worship' }, 'religious'], [{ historic: 'monastery' }, 'religious'], [{ tourism: 'viewpoint' }, 'viewpoint'], [{ waterway: 'waterfall' }, 'nature'], [{ natural: 'peak' }, 'nature'], [{ leisure: 'nature_reserve' }, 'nature'], [{ natural: 'beach' }, 'water'], [{ leisure: 'park' }, 'park'], [{ tourism: 'zoo' }, 'park'], [{ historic: 'castle' }, 'history'], [{ tourism: 'attraction' }, 'history']];
+  for (const [t, k] of cases) assert.equal(kindOf(t), k, JSON.stringify(t));
+  for (const t of [{}, { shop: 'bakery' }, { amenity: 'cafe' }, { historic: 'wayside_shrine' }, { tourism: 'hotel' }]) assert.equal(kindOf(t), null, JSON.stringify(t));
 });
 
-test('classify keeps clear attractions only and maps them to the guide kinds', () => {
-  const cases = { 'Orthodox church in Veles': 'religious', 'National museum in Skopje': 'museum', 'River in North Macedonia': 'nature', 'Waterfall in Serbia': 'nature', 'Public park in Belgrade': 'park', 'Medieval fortress': 'history', 'Pedestrian street in Belgrade': 'street', 'Beach in Montenegro': 'water', 'Viewpoint above the city': 'viewpoint', 'Mosque in Sarajevo': 'religious' };
-  for (const [d, k] of Object.entries(cases)) assert.equal(classify(d), k, d);
-  for (const d of ['Village in North Macedonia', 'Municipality in Serbia', 'Railway station in Belgrade', 'Footballer', 'Politician born in Skopje', 'Company', 'Disambiguation page', '', null, undefined, 'Something vague']) assert.equal(classify(d), null, String(d));
-  assert.equal(classify('Church museum'), 'museum', 'first matching rule wins');
+test('describe uses the mapper’s own description, else the tagged type, and never invents', () => {
+  assert.equal(describe({ description: 'Local history', tourism: 'museum' }), 'Local history');
+  assert.equal(describe({ tourism: 'attraction', attraction: 'clock_tower' }), 'Clock tower');
+  assert.equal(describe({ historic: 'castle' }), 'Castle');
+  assert.equal(describe({ amenity: 'place_of_worship', religion: 'christian' }), 'Place of worship (christian)');
+  assert.equal(describe({ waterway: 'waterfall' }), 'Waterfall');
+  assert.equal(describe({ natural: 'peak' }), 'Peak');
+  assert.equal(describe({}), '');
 });
 
-test('nearby: batches descriptions, drops what is not an attraction, sorts by distance, counts what was dropped', async () => {
+test('overpassQuery contains only sanitised numbers and fixed tag filters', () => {
+  const q = overpassQuery(41.71563, 21.77561, 6000);
+  assert.match(q, /^\[out:json\]\[timeout:25\];\(/);
+  assert.ok(q.includes('(around:6000,41.71563,21.77561)'));
+  assert.ok(q.endsWith(');out center tags 300;'));
+  assert.ok(overpassQuery(1, 2, 99999999).includes('around:15000,'), 'radius is capped');
+  assert.ok(overpassQuery(1, 2, 1).includes('around:500,'), 'and floored');
+  assert.doesNotMatch(overpassQuery('1;drop', '2" or "1', 5000), /drop|"\s*or/, 'non-numeric input cannot reach the query');
+});
+
+test('parseElements keeps named attractions, copies fee / hours / access / website verbatim, dedupes, ranks notable first', () => {
+  const { places, dropped } = parseElements(ELEMENTS, 41.7156, 21.7756);
+  assert.deepEqual(places.map((p) => p.osm).sort(), ['n11', 'n13', 'r15', 'w12']);
+  assert.ok(places.every((p, i) => i === 0 || places[i - 1].dist <= p.dist), 'nearest first')
+  const byId = Object.fromEntries(places.map((p) => [p.osm, p]));
+  assert.deepEqual([byId.n11.fee, byId.n11.wheelchair, byId.n11.site, byId.n11.desc, byId.n11.kind], ['no', 'yes', 'https://example.org/tower', 'Clock tower', 'history']);
+  assert.deepEqual([byId.w12.fee, byId.w12.hours, byId.w12.name, byId.w12.desc], ['yes', 'Tu-Su 09:00-17:00', 'Veles City Museum', 'Local history']);
+  assert.deepEqual([byId.n13.kind, byId.n13.fee, byId.n13.hours], ['religious', '', ''], 'untagged fee and hours stay empty, never guessed');
+  assert.equal(byId.r15.kind, 'nature');
+  assert.ok(!places.some((p) => p.osm === 'w14'), 'the same museum mapped twice appears once');
+  assert.equal(dropped, 4, 'shop, unnamed, off-map and untyped element');
+  assert.ok(places.every((p) => !('notable' in p) && Number.isInteger(p.dist)));
+  assert.throws(() => parseElements({}, 1, 1), (e) => e.code === 'format');
+  const hostile = parseElements([{ type: 'node', id: 1, lat: 1, lon: 1, tags: { name: '<img src=x onerror=1>', tourism: 'museum', website: 'javascript:alert(1)', fee: 'maybe', wheelchair: 'sometimes', opening_hours: 'x'.repeat(500) } }], 1, 1).places[0];
+  assert.deepEqual([hostile.site, hostile.fee, hostile.wheelchair, hostile.hours.length], ['', '', '', 120], 'unsafe or unknown values are dropped');
+  assert.equal(hostile.name, '<img src=x onerror=1>', 'markup stays inert text (the UI only uses textContent)');
+});
+
+test('parseElements caps the list at 60, keeping notable places', () => {
+  const many = Array.from({ length: 150 }, (_, i) => ({ type: 'node', id: i + 1, lat: 1 + i / 10000, lon: 1, tags: { name: `P${i}`, tourism: 'attraction', ...(i >= 140 ? { wikidata: 'Q1' } : {}) } }));
+  const { places, dropped } = parseElements(many, 1, 1);
+  assert.equal(places.length, 60);
+  assert.ok([140, 141, 149].every((i) => places.some((p) => p.name === `P${i}`)), 'notable ones survive the cut');
+  assert.equal(dropped, 90);
+});
+
+test('nearby: asks Overpass once, falls back to the mirror when the first is busy, never on garbage', async () => {
   const log = [];
-  const { places, dropped } = await nearby(41.7156, 21.7756, { fetchImpl: fakeWeb(log) });
-  assert.deepEqual(places.map((p) => [p.wp, p.kind]), [[11, 'history'], [10, 'religious'], [14, 'nature']]);
-  assert.equal(dropped, 2, 'the village and the page with no description');
-  assert.deepEqual(places[0], { wp: 11, name: 't'.length ? 'Veles Clock Tower' : '', desc: 'Clock tower in Veles, North Macedonia', kind: 'history', lat: 41.72, lon: 21.78, dist: 120 });
-  const geo = new URL(log[0]).searchParams;
-  assert.deepEqual([geo.get('list'), geo.get('gscoord'), geo.get('gsradius'), geo.get('gslimit')], ['geosearch', '41.7156|21.7756', '10000', '100']);
-  assert.equal(log.length, 2, 'one geosearch + one description batch');
+  const r = await nearby(41.7156, 21.7756, { fetchImpl: fakeWeb(log) });
+  assert.equal(log.length, 1);
+  assert.equal(new URL(log[0].url).hostname, 'overpass-api.de');
+  assert.ok(new URL(log[0].url).searchParams.get('data').includes('around:6000,41.71560,21.77560'));
+  assert.ok(r.places.length >= 3);
+  const mirrorLog = [];
+  const busy = async (url, init) => { mirrorLog.push(new URL(url).hostname); return new URL(url).hostname === 'overpass-api.de' ? { ok: false, status: 429, json: async () => ({}) } : fakeWeb()(url, init); };
+  const viaMirror = await nearby(41.7156, 21.7756, { fetchImpl: busy });
+  assert.deepEqual(mirrorLog, ['overpass-api.de', 'overpass.kumi.systems']);
+  assert.ok(viaMirror.places.length >= 3);
+  const bothDown = async () => ({ ok: false, status: 504, json: async () => ({}) });
+  await assert.rejects(nearby(1, 1, { fetchImpl: bothDown }), (e) => e.code === 'http');
+  const garbage = []; await assert.rejects(nearby(1, 1, { fetchImpl: async (u) => { garbage.push(u); return ok({ elements: 'nope' }); } }), (e) => e.code === 'format');
+  assert.equal(garbage.length, 1, 'a malformed answer is not retried');
   await assert.rejects(nearby(95, 0, { fetchImpl: fakeWeb() }), (e) => e.code === 'input');
-  await assert.rejects(nearby(1, 1, { fetchImpl: async () => ok({ query: {} }) }), (e) => e.code === 'format');
-});
-
-test('nearby batches description requests in groups of 50', async () => {
-  const log = [];
-  const many = Array.from({ length: 100 }, (_, i) => ({ pageid: i + 1, title: `T${i}`, lat: 1, lon: 1, dist: i }));
-  const f = async (url) => { log.push(url); const p = new URL(url).searchParams; return p.get('list') ? ok({ query: { geosearch: many } }) : ok({ query: { pages: p.get('pageids').split('|').map((id) => ({ pageid: +id, description: 'Museum in X' })) } }); };
-  const { places } = await nearby(1, 1, { fetchImpl: f });
-  assert.equal(log.length, 3);
-  assert.ok(log.slice(1).every((u) => new URL(u).searchParams.get('pageids').split('|').length === 50));
-  assert.equal(places.length, 60, 'capped');
+  const timedOut = async () => ok({ remark: 'runtime error: Query timed out in "query" at line 3', elements: undefined });
+  await assert.rejects(nearby(1, 1, { fetchImpl: timedOut }), (e) => e.code === 'http');
 });
 
 test('network failures become clear, typed errors', async () => {
   const offline = async () => { throw new TypeError('Failed to fetch'); };
   await assert.rejects(findPlaces('Veles', { fetchImpl: offline }), (e) => e instanceof OnlineError && e.code === 'offline' && /No connection/.test(friendlyError(e)));
   const abort = async (_u, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
-  await assert.rejects(getJson('https://en.wikipedia.org/w/api.php', { fetchImpl: abort, timeoutMs: 20 }), (e) => e.code === 'timeout');
+  await assert.rejects(getJson(withParams(NOMINATIM, { q: 'x' }), { fetchImpl: abort, timeoutMs: 20 }), (e) => e.code === 'timeout');
   await assert.rejects(findPlaces('Veles', { fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({}) }) }), (e) => e.code === 'http');
   await assert.rejects(findPlaces('Veles', { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad'); } }) }), (e) => e.code === 'format');
   assert.match(friendlyError(new Error('mystery')), /busy or unavailable/);
 });
 
+const CAND = { id: 'r1234', label: 'Veles', description: 'x', lat: 41.7156, lon: 21.7756, large: false };
+
 test('lookup: live result is cached; a later failure falls back to the cache and says so; fresh refreshes', async () => {
   globalThis.localStorage = makeLocalStorage();
   try {
-    const cand = { qid: 'Q1', label: 'Veles' };
-    const live = await lookup(cand, { fetchImpl: fakeWeb(), now: () => '2026-10-28T10:00:00Z' });
-    assert.deepEqual([live.fromCache, live.stale, live.places.length, live.lat], [false, false, 3, 41.7156]);
-    const cached = await lookup(cand, { fetchImpl: async () => { throw new Error('must not be called'); } });
+    const live = await lookup(CAND, { fetchImpl: fakeWeb(), now: () => '2026-10-28T10:00:00Z' });
+    assert.deepEqual([live.fromCache, live.stale, live.places.length > 0, live.lat], [false, false, true, 41.7156]);
+    const cached = await lookup(CAND, { fetchImpl: async () => { throw new Error('must not be called'); } });
     assert.deepEqual([cached.fromCache, cached.stale, cached.at], [true, false, '2026-10-28T10:00:00Z']);
     const offline = async () => { throw new TypeError('x'); };
-    const stale = await lookup(cand, { fresh: true, fetchImpl: offline });
-    assert.deepEqual([stale.fromCache, stale.stale, stale.places.length], [true, true, 3], 'refresh failed offline: old data, flagged');
-    await assert.rejects(lookup({ qid: 'Q5', label: 'Nowhere' }, { fetchImpl: offline }), (e) => e.code === 'offline', 'no cache, no network: an error, not an empty list');
-    await assert.rejects(lookup(cand, { fresh: true, fetchImpl: async () => ({ ok: true, json: async () => ({ nope: 1 }) }) }), (e) => e.code === 'format', 'garbage is never papered over with stale data');
-    const none = await lookup({ qid: 'Q9', label: 'Atlantis' }, { fetchImpl: fakeWeb(), now: () => 'x' });
-    assert.deepEqual([none.lat, none.places.length], [null, 0], 'a place without coordinates returns no places');
+    const stale = await lookup(CAND, { fresh: true, fetchImpl: offline });
+    assert.deepEqual([stale.fromCache, stale.stale, stale.places.length === live.places.length], [true, true, true]);
+    await assert.rejects(lookup({ ...CAND, id: 'n5' }, { fetchImpl: offline }), (e) => e.code === 'offline', 'no cache, no network: an error, not an empty list');
+    await assert.rejects(lookup(CAND, { fresh: true, fetchImpl: async () => ok({ elements: 'nope' }) }), (e) => e.code === 'format', 'garbage is never papered over with stale data');
+    await assert.rejects(lookup({ id: 'x', label: 'x', lat: NaN, lon: 1 }, { fetchImpl: fakeWeb() }), (e) => e.code === 'input');
   } finally { delete globalThis.localStorage; }
 });
 
-test('cache keeps the 10 newest destinations, tolerates corrupt or missing storage', () => {
+test('cache keeps the 10 newest destinations and 20 searches, recalls searches offline, tolerates corrupt or missing storage', () => {
   globalThis.localStorage = makeLocalStorage();
   try {
-    for (let i = 1; i <= 14; i += 1) writeCache(`Q${i}`, { places: [], at: `2026-10-${String(10 + i).padStart(2, '0')}T00:00:00Z`, label: 'x' });
-    assert.equal(readCache('Q1'), null);
-    assert.ok(readCache('Q14') && readCache('Q5'));
-    assert.equal(Object.keys(JSON.parse(globalThis.localStorage.getItem('packwise.online.v1')).items).length, 10);
-    globalThis.localStorage.setItem('packwise.online.v1', '{not json');
-    assert.equal(readCache('Q14'), null);
-    writeCache('Q1', { places: [], at: 'x', label: 'y' }); // recovers
-    assert.ok(readCache('Q1'));
+    for (let i = 1; i <= 14; i += 1) writeCache(`n${i}`, { places: [], at: `2026-10-${String(10 + i).padStart(2, '0')}T00:00:00Z`, label: 'x' });
+    assert.equal(readCache('n1'), null);
+    assert.ok(readCache('n14') && readCache('n5'));
+    rememberCandidates('  Veles ', [CAND]);
+    assert.deepEqual(recallCandidates('veles'), [CAND]);
+    rememberCandidates('Nowhere', []);
+    assert.equal(recallCandidates('Nowhere'), null);
+    writeCache('n1', { places: [], at: 'z', label: 'y' });
+    assert.ok(recallCandidates('Veles'), 'writing results keeps the remembered searches');
+    for (let i = 0; i < 30; i += 1) rememberCandidates(`city ${i}`, [CAND], `2026-10-${String((i % 28) + 1).padStart(2, '0')}`);
+    assert.ok(Object.keys(JSON.parse(globalThis.localStorage.getItem('packwise.online.v2')).q).length <= 20);
+    globalThis.localStorage.setItem('packwise.online.v2', '{not json');
+    assert.equal(readCache('n14'), null);
+    writeCache('n1', { places: [], at: 'x', label: 'y' });
+    assert.ok(readCache('n1'), 'recovers from a corrupt cache');
     clearCache();
-    assert.equal(readCache('Q1'), null);
+    assert.equal(readCache('n1'), null);
   } finally { delete globalThis.localStorage; }
-  assert.equal(readCache('Q1'), null, 'no storage at all');
-  assert.doesNotThrow(() => writeCache('Q1', { places: [], at: 'x' }));
+  assert.equal(readCache('n1'), null, 'no storage at all');
+  assert.doesNotThrow(() => writeCache('n1', { places: [], at: 'x' }));
 });
 
 test('coordsText formats and refuses junk', () => {
   assert.equal(coordsText(41.71563, 21.77561), '41.71563, 21.77561');
   assert.equal(coordsText(NaN, 1), '');
-});
-
-import { recallCandidates, rememberCandidates } from '../../js/online.js';
-
-test('an earlier search can be recalled offline; recall ignores case and spacing; empty results are not kept', () => {
-  globalThis.localStorage = makeLocalStorage();
-  try {
-    assert.equal(recallCandidates('Veles'), null);
-    rememberCandidates('  Veles ', [{ qid: 'Q1', label: 'Veles', description: 'city' }]);
-    assert.deepEqual(recallCandidates('veles'), [{ qid: 'Q1', label: 'Veles', description: 'city' }]);
-    rememberCandidates('Nowhere', []);
-    assert.equal(recallCandidates('Nowhere'), null);
-    writeCache('Q1', { places: [], at: '2026-10-28', label: 'x' }); // writing results keeps the remembered searches
-    assert.ok(recallCandidates('Veles'));
-    for (let i = 0; i < 30; i += 1) rememberCandidates(`city ${i}`, [{ qid: `Q${i}`, label: 'x', description: '' }], `2026-10-${String(i % 28 + 1).padStart(2, '0')}`);
-    assert.ok(Object.keys(JSON.parse(globalThis.localStorage.getItem('packwise.online.v1')).q).length <= 20);
-  } finally { delete globalThis.localStorage; }
 });

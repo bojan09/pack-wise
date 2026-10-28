@@ -6,7 +6,7 @@ import { icon } from '../ui/icons.js';
 import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { companionBubble } from '../ui/bubble.js';
 import { toast } from '../ui/toast.js';
-import { ADMISSION, googleCoordUrl, googleMapsUrl, osmCoordUrl, wikipediaPageUrl } from '../guide.js';
+import { ADMISSION, googleCoordUrl, googleMapsUrl, osmCoordUrl, osmObjectUrl, wikipediaPageUrl } from '../guide.js';
 import { GUIDE_FOOT, dayCount, draftPlan, groupByDay, groupByInterest, guideFilename, guideModel, guideToText, packHints, planned, resolveGuide } from '../plan.js';
 import { downloadFile } from '../backup.js';
 import { customPlaceDialog } from './customPlace.js';
@@ -117,7 +117,7 @@ export function GuideScreen(ctx) {
     if (row.kind === 'place' && row.place) tags.push(h('span', { class: `tag adm-tag adm-tag-${row.place.admission}`, text: ADMISSION[row.place.admission].label }));
     if (row.kind === 'food') tags.push(h('span', { class: 'tag', text: 'Food & drink' }));
     if (row.kind === 'custom') tags.push(h('span', { class: 'tag', text: 'My place' }));
-    if (row.kind === 'web') tags.push(h('span', { class: 'tag', text: 'From Wikipedia' }), h('span', { class: 'tag adm-tag adm-tag-check', text: 'Check admission' }));
+    if (row.kind === 'web') tags.push(h('span', { class: 'tag', text: row.entry.osm ? 'From OpenStreetMap' : 'From Wikipedia' }), h('span', { class: `tag adm-tag ${row.entry.fee === 'no' ? 'adm-tag-free' : row.entry.fee === 'yes' ? 'adm-tag-paid' : 'adm-tag-check'}`, text: row.entry.fee === 'no' ? 'Free per OSM' : row.entry.fee === 'yes' ? 'Ticketed per OSM' : 'Check admission' }));
     if (row.kind === 'food' && row.entry.tried) tags.push(h('span', { class: 'tag tag-family', text: 'Tried' }));
     return h(
       'li',
@@ -129,10 +129,14 @@ export function GuideScreen(ctx) {
         tags.length ? h('div', { class: 'place-tags' }, tags) : null,
         row.entry.note ? h('span', { class: 'small guide-note', text: `Note: ${row.entry.note}` }) : null,
         row.kind === 'web' ? h('div', { class: 'web-links' },
-          row.entry.lat !== null ? h('span', { class: 'muted small coords', text: `${row.entry.lat.toFixed(5)}, ${row.entry.lon.toFixed(5)} (from Wikidata)` }) : null,
+          row.entry.hours ? h('span', { class: 'small web-hours' }, h('strong', { text: 'Hours (OpenStreetMap, may be outdated): ' }), row.entry.hours) : null,
+          row.entry.wheelchair ? h('span', { class: 'small' }, h('strong', { text: 'Wheelchair access (OpenStreetMap): ' }), row.entry.wheelchair) : null,
+          row.entry.lat !== null ? h('span', { class: 'muted small coords', text: `${row.entry.lat.toFixed(5)}, ${row.entry.lon.toFixed(5)} (${row.entry.osm ? 'from OpenStreetMap' : 'from Wikidata'})` }) : null,
           row.entry.lat !== null ? h('a', { class: 'link small', href: googleCoordUrl(row.entry.lat, row.entry.lon), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` at the coordinates of ${row.title} (opens in a new tab)` })) : null,
           row.entry.lat !== null ? h('a', { class: 'link small', href: osmCoordUrl(row.entry.lat, row.entry.lon), target: '_blank', rel: 'noopener noreferrer' }, icon('pin', { size: 13 }), 'OpenStreetMap', h('span', { class: 'sr-only', text: ` at the coordinates of ${row.title} (opens in a new tab)` })) : null,
-          h('a', { class: 'link small', href: wikipediaPageUrl(row.entry.wp), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Wikipedia', h('span', { class: 'sr-only', text: ` article about ${row.title} (opens in a new tab)` }))) : null,
+          row.entry.osm ? h('a', { class: 'link small', href: osmObjectUrl(row.entry.osm), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Map entry', h('span', { class: 'sr-only', text: ` for ${row.title} on OpenStreetMap (opens in a new tab)` })) : null,
+          row.entry.site ? h('a', { class: 'link small', href: row.entry.site, target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Website', h('span', { class: 'sr-only', text: ` of ${row.title} (opens in a new tab)` })) : null,
+          !row.entry.osm && row.entry.wp ? h('a', { class: 'link small', href: wikipediaPageUrl(row.entry.wp), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Wikipedia', h('span', { class: 'sr-only', text: ` article about ${row.title} (opens in a new tab)` })) : null) : null,
         row.kind === 'custom' ? h('a', { class: 'link small', href: googleMapsUrl(row.place, { name: tripPlace, country: '' }), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` search for ${row.title} (opens in a new tab)` })) : null,
         row.kind === 'place' && row.place ? h('a', { class: 'link small', href: googleMapsUrl(row.place, row.dest), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` for ${row.title} (opens in a new tab)` })) : null),
       h('div', { class: 'guide-row-actions' },

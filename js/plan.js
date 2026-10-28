@@ -140,6 +140,8 @@ export function guideModel(trip, rows, days) {
     sub: r.sub,
     tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : r.kind === 'custom' ? 'My place' : r.kind === 'web' ? 'Found online' : '',
     coords: r.kind === 'web' && r.entry.lat !== null && r.entry.lon !== null ? `${r.entry.lat.toFixed(5)}, ${r.entry.lon.toFixed(5)}` : '',
+    fee: r.kind === 'web' ? r.entry.fee : '',
+    hours: r.kind === 'web' ? r.entry.hours : '',
     tried: r.kind === 'food' ? Boolean(r.entry.tried) : null,
     note: (r.entry.note || '').replace(/\s*\n\s*/g, ' '),
     missing: r.missing,
@@ -152,7 +154,7 @@ export function guideModel(trip, rows, days) {
 }
 
 const ADMISSION_LABEL = { free: 'Free area', paid: 'Ticketed', check: 'Check admission' };
-const FOOT = 'Prices, opening hours and travel times are not included: check admission and hours before you go. Diet and allergen details are general: confirm ingredients with the cook. Places marked “Found online” come from Wikipedia and Wikidata and were not reviewed by PackWise.';
+const FOOT = 'Prices, opening hours and travel times are not included: check admission and hours before you go. Diet and allergen details are general: confirm ingredients with the cook. Places marked “Found online” come from OpenStreetMap (© OpenStreetMap contributors, ODbL); their coordinates, entry fees and hours are volunteer-edited, may be out of date and were not reviewed by PackWise.';
 
 export function guideToText(model) {
   const out = [`PackWise — ${model.title}`, model.meta, model.byDay ? 'A draft you arranged yourself: no times, routes or durations.' : ''].filter(Boolean);
@@ -161,7 +163,7 @@ export function guideToText(model) {
     out.push(s.label.toUpperCase());
     for (const r of s.rows) {
       const box = r.tried === null ? '-' : r.tried ? '[x]' : '[ ]';
-      out.push(`  ${box} ${r.title}${r.sub && !r.missing ? ` (${r.sub})` : r.missing ? ' (no longer in the guide)' : ''}${r.tag ? ` [${r.tag}]` : ''}${r.coords ? ` @ ${r.coords}` : ''}${r.note ? ` — ${r.note}` : ''}`);
+      out.push(`  ${box} ${r.title}${r.sub && !r.missing ? ` (${r.sub})` : r.missing ? ' (no longer in the guide)' : ''}${r.tag ? ` [${r.tag}]` : ''}${r.coords ? ` @ ${r.coords}` : ''}${r.fee ? ` [${r.fee === 'no' ? 'free' : 'ticketed'} per OpenStreetMap]` : ''}${r.hours ? ` (hours per OpenStreetMap, may be outdated: ${r.hours})` : ''}${r.note ? ` — ${r.note}` : ''}`);
     }
     out.push('');
   }

@@ -147,7 +147,8 @@ export const googleMapsUrl = (place, dest) => `https://www.google.com/maps/searc
 /** Links for a place whose coordinates came from a source (the online lookup): exact pins, no guessing. */
 export const googleCoordUrl = (lat, lon) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
 export const osmCoordUrl = (lat, lon) => `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=17/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`;
-export const wikipediaPageUrl = (pageId) => `https://en.wikipedia.org/?curid=${encodeURIComponent(pageId)}`;
+export const wikipediaPageUrl = (pageId) => `https://en.wikipedia.org/?curid=${encodeURIComponent(pageId)}`; // legacy v4 entries only
+export const osmObjectUrl = (osm) => { const m = /^([nwr])(\d{1,12})$/.exec(osm || ''); return m ? `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[m[1]]}/${m[2]}` : ''; };
 export const wikipediaTextUrl = (text) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(text)}`;
 export const thingsToDoUrl = (text) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`things to do near ${text}`)}`;
 export const wikipediaSearchUrl = (place, dest) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${place.name} ${dest.name}`)}`;

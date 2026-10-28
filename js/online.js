@@ -1,24 +1,25 @@
-// Optional live place lookup for destinations the built-in guide does not cover.
+// Optional live place lookup for destinations the built-in guide does not cover, from OpenStreetMap.
 //
-// Sources (free, no key, CORS-enabled): Wikidata (place search + coordinates, CC0) and the English Wikipedia
-// (articles near a point + their one-line descriptions, CC0 short descriptions). Nothing is fetched unless the user
-// taps "Search online"; only the typed place name and, afterwards, that place's coordinates are sent. Results are
-// cached on the device so they work offline and survive a failed refresh.
+// Sources (free, no API key, CORS-enabled): Nominatim (find a town or city by name) and the Overpass API (tagged
+// places around a point). Data © OpenStreetMap contributors, ODbL. Nothing is fetched unless the user taps
+// "Search online"; only the typed place name and, afterwards, that place's coordinates are sent.
 //
-// Honesty rules: no prices, opening hours or admission are ever inferred (admission is always "check"); a result
-// without a recognisable attraction type is dropped, not guessed; everything shown says where it came from.
+// Honesty rules: a place is shown only if OpenStreetMap tags it as an attraction; fee, opening hours and wheelchair
+// access are copied verbatim from its tags and labelled as community data; nothing is inferred or invented; places
+// without a recognisable type are dropped and counted. There is no API key, and no AI model is a source of facts.
 //
 // Network access goes through `getJson` only, which refuses any host outside ONLINE_HOSTS.
 
-export const ONLINE_HOSTS = ['www.wikidata.org', 'en.wikipedia.org'];
-const WIKIDATA = 'https://www.wikidata.org/w/api.php';
-const WIKIPEDIA = 'https://en.wikipedia.org/w/api.php';
+export const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+export const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+export const ONLINE_HOSTS = ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems'];
 /** Plain pages for the attribution line (opened by the user, never fetched). */
-export const SOURCE_PAGES = { wikidata: 'https://www.wikidata.org/', wikipedia: 'https://en.wikipedia.org/' };
-export const TIMEOUT_MS = 12000;
-export const RADIUS_M = 10000; // the Wikipedia geosearch maximum
-const CACHE_KEY = 'packwise.online.v1';
-const CACHE_MAX = 10; // destinations kept for offline use (about 10 KB each)
+export const SOURCE_PAGES = { osm: 'https://www.openstreetmap.org/', copyright: 'https://www.openstreetmap.org/copyright' };
+export const TIMEOUT_MS = 20000;
+export const RADIUS_M = 6000;
+const CACHE_KEY = 'packwise.online.v2';
+const CACHE_MAX = 10; // destinations kept for offline use
+const MAX_PLACES = 60;
 
 export class OnlineError extends Error {
   /** @param {'offline'|'timeout'|'http'|'format'|'blocked'|'input'} code */
@@ -31,23 +32,26 @@ export class OnlineError extends Error {
 const FRIENDLY = {
   offline: 'No connection. Saved results still work; try again when you are online.',
   timeout: 'The lookup took too long. Try again in a moment.',
-  http: 'The lookup service is busy or unavailable right now. Try again later.',
-  format: 'The lookup service sent something unexpected, so nothing was shown. Try again later.',
+  http: 'The map service is busy or unavailable right now. Try again later.',
+  format: 'The map service sent something unexpected, so nothing was shown. Try again later.',
   blocked: 'That address is not allowed.',
   input: 'Type a place name of at least two letters.',
 };
 export const friendlyError = (e) => FRIENDLY[e?.code] || FRIENDLY.http;
 
 // ------------------------------------------------------------------ network
-export function apiUrl(base, params) {
+export function withParams(base, params) {
   const u = new URL(base);
-  for (const [k, v] of Object.entries({ format: 'json', formatversion: '2', origin: '*', ...params })) u.searchParams.set(k, String(v));
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
   return u.toString();
 }
 
-/** GET JSON from an allowed host only, with a timeout, no cookies and no referrer. */
+/**
+ * GET JSON from an allowed host only, with a timeout and no cookies. Nominatim's usage policy asks for an
+ * identifying referrer, so it gets the site origin only; Overpass gets none.
+ */
 export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
-  let host;
+  let host = '';
   try {
     const u = new URL(url);
     host = u.protocol === 'https:' ? u.hostname : '';
@@ -56,11 +60,11 @@ export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = T
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
   try {
-    const res = await fetchImpl(url, { method: 'GET', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: ctl?.signal, headers: { accept: 'application/json' } });
+    const res = await fetchImpl(url, { method: 'GET', credentials: 'omit', referrerPolicy: host === 'nominatim.openstreetmap.org' ? 'origin' : 'no-referrer', redirect: 'error', signal: ctl?.signal, headers: { accept: 'application/json' } });
     if (!res.ok) throw new OnlineError('http', FRIENDLY.http);
     let body;
     try { body = await res.json(); } catch { throw new OnlineError('format', FRIENDLY.format); }
-    if (!body || typeof body !== 'object' || body.error) throw new OnlineError('format', FRIENDLY.format);
+    if (!body || typeof body !== 'object') throw new OnlineError('format', FRIENDLY.format);
     return body;
   } catch (e) {
     if (e instanceof OnlineError) throw e;
@@ -73,98 +77,160 @@ export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = T
 
 const cleanQuery = (q) => String(q ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 const str = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n) : '');
+const inRange = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
 
 // ------------------------------------------------------------------- search
 /**
- * Candidate places for a typed name. Ambiguity is shown, never guessed: "Split" returns every Split with its
- * description so the user picks the right one.
- * @returns {Promise<{qid: string, label: string, description: string}[]>}
+ * Candidate places for a typed name (Nominatim). Ambiguity is shown, never guessed: "Split" returns every Split with
+ * its region and country so the user picks. `large` marks countries, states and regions, which have no single
+ * point to search around.
+ * @returns {Promise<{id: string, label: string, description: string, lat: number, lon: number, large: boolean}[]>}
  */
 export async function findPlaces(query, opts = {}) {
   const q = cleanQuery(query);
   if (q.length < 2) throw new OnlineError('input', FRIENDLY.input);
-  const body = await getJson(apiUrl(WIKIDATA, { action: 'wbsearchentities', search: q, language: 'en', uselang: 'en', type: 'item', limit: 8 }), opts);
-  if (!Array.isArray(body.search)) throw new OnlineError('format', FRIENDLY.format);
-  return body.search
-    .filter((s) => s && /^Q\d{1,12}$/.test(s.id || ''))
-    .map((s) => ({ qid: s.id, label: str(s.label || s.match?.text, 80) || s.id, description: str(s.description, 120) }))
-    .slice(0, 8);
+  const body = await getJson(withParams(NOMINATIM, { q, format: 'jsonv2', limit: 8, 'accept-language': 'en', dedupe: 1 }), opts);
+  if (!Array.isArray(body)) throw new OnlineError('format', FRIENDLY.format);
+  const out = [];
+  for (const r of body) {
+    const lat = Number(r?.lat);
+    const lon = Number(r?.lon);
+    if (!r || !['node', 'way', 'relation'].includes(r.osm_type) || !Number.isInteger(r.osm_id) || !inRange(lat, lon)) continue;
+    const rank = Number(r.place_rank);
+    const label = str(r.name || String(r.display_name || '').split(',')[0], 80);
+    if (!label) continue;
+    out.push({
+      id: `${r.osm_type[0]}${r.osm_id}`,
+      label,
+      description: str(String(r.display_name || '').split(',').slice(1).join(','), 120) || str(r.type, 40),
+      lat,
+      lon,
+      large: Number.isFinite(rank) && rank < 12, // country 4, state 8, region/county 10-12
+    });
+  }
+  return out.slice(0, 8);
 }
 
-/** Coordinates (Wikidata P625) of an item, or null when it has none. */
-export async function coordsOf(qid, opts = {}) {
-  if (!/^Q\d{1,12}$/.test(qid)) throw new OnlineError('input', FRIENDLY.input);
-  const body = await getJson(apiUrl(WIKIDATA, { action: 'wbgetclaims', entity: qid, property: 'P625' }), opts);
-  if (!body.claims || typeof body.claims !== 'object') throw new OnlineError('format', FRIENDLY.format); // the API always returns a claims object, empty when there are none
-  const v = body.claims.P625?.[0]?.mainsnak?.datavalue?.value;
-  const lat = Number(v?.latitude);
-  const lon = Number(v?.longitude);
-  return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
-}
+// ------------------------------------------------------------ OSM -> a place
+const HISTORIC = new Set(['castle', 'fort', 'monument', 'memorial', 'ruins', 'archaeological_site', 'city_gate', 'tower', 'palace', 'manor', 'tomb', 'citywalls']);
+const WORSHIP = new Set(['church', 'monastery']);
 
-// ---------------------------------------------------------- classification
-const EXCLUDE = /\b(village|municipality|settlement|suburb|neighbou?rhood|district|county|region|province|railway|station|airport|school|university|college|hospital|company|politician|footballer|player|singer|actor|actress|born|disambiguation|census|population|hamlet|commune|motorway|highway|road|bus|metro|football club|stadium)\b/i;
-
-/** Ordered: the first matching kind wins. Kinds are the same ids the built-in guide uses. */
-const KIND_RULES = [
-  ['museum', /\b(museum|gallery|exhibition)\b/i],
-  ['religious', /\b(church|cathedral|monastery|mosque|synagogue|temple|chapel|basilica|abbey|shrine|convent)\b/i],
-  ['viewpoint', /\b(viewpoint|lookout|observation|belvedere)\b/i],
-  ['nature', /\b(mountain|peak|waterfall|cave|gorge|canyon|national park|nature reserve|forest|river|hill|valley|trail|glacier|volcano|cliff)\b/i],
-  ['water', /\b(beach|lake|reservoir|harbou?r|bay|waterfront|promenade|coast|island|lagoon)\b/i],
-  ['park', /\b(park|garden|gardens|botanical|zoo)\b/i],
-  ['street', /\b(square|street|market|bazaar|boulevard|plaza|avenue|pedestrian)\b/i],
-  ['history', /\b(castle|fortress|fort|citadel|palace|tower|ruins?|archaeological|monument|memorial|statue|bridge|old town|heritage|historic|historical|gate|wall|mansion|theatre|theater|library|clock|landmark|obelisk|arch|aqueduct|tomb|mausoleum)\b/i],
-];
-
-/** The built-in guide kind for a one-line Wikipedia description, or null when it is not clearly an attraction. */
-export function classify(description) {
-  const d = String(description ?? '');
-  if (!d || EXCLUDE.test(d)) return null;
-  for (const [kind, re] of KIND_RULES) if (re.test(d)) return kind;
+/** Which of the guide's kinds an element's tags describe, or null when it is not clearly an attraction. */
+export function kindOf(tags = {}) {
+  const t = tags;
+  if (['museum', 'gallery'].includes(t.tourism)) return 'museum';
+  if (t.amenity === 'place_of_worship' || WORSHIP.has(t.historic)) return 'religious';
+  if (t.tourism === 'viewpoint') return 'viewpoint';
+  if (['waterfall', 'peak', 'cave_entrance', 'hot_spring'].includes(t.natural) || t.waterway === 'waterfall' || t.leisure === 'nature_reserve') return 'nature';
+  if (t.natural === 'beach') return 'water';
+  if (['park', 'garden'].includes(t.leisure) || ['zoo', 'theme_park'].includes(t.tourism)) return 'park';
+  if (HISTORIC.has(t.historic)) return 'history';
+  if (t.tourism === 'attraction') return 'history';
   return null;
 }
 
-// ------------------------------------------------------------------ nearby
+const TYPE_LABEL = { waterfall: 'Waterfall', peak: 'Peak', cave_entrance: 'Cave', hot_spring: 'Hot spring', beach: 'Beach' };
+const titleCase = (s) => s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+/** A short human description from the tags: the mapper's own `description` when present, else the tagged type. */
+export function describe(tags = {}) {
+  const own = str(tags['description:en'] || tags.description, 120);
+  if (own) return own;
+  if (tags.amenity === 'place_of_worship') return `Place of worship${tags.religion ? ` (${str(tags.religion, 20)})` : ''}`;
+  const raw = tags.tourism === 'attraction' && tags.attraction ? tags.attraction : tags.historic || tags.tourism || tags.leisure || '';
+  if (raw) return titleCase(str(raw, 40));
+  if (tags.waterway === 'waterfall') return 'Waterfall';
+  return TYPE_LABEL[tags.natural] || '';
+}
+
+const distM = (a, b, c, d) => {
+  const R = 6371000;
+  const rad = Math.PI / 180;
+  const x = Math.sin(((c - a) * rad) / 2) ** 2 + Math.cos(a * rad) * Math.cos(c * rad) * Math.sin(((d - b) * rad) / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(x)));
+};
+
+/** Overpass QL for named attractions around a point. Numbers are sanitised, nothing user-typed is interpolated. */
+export function overpassQuery(lat, lon, radius = RADIUS_M) {
+  const la = Number(lat).toFixed(5);
+  const lo = Number(lon).toFixed(5);
+  const r = Math.max(500, Math.min(15000, Math.round(radius)));
+  const a = `(around:${r},${la},${lo})`;
+  return `[out:json][timeout:25];(`
+    + `nwr["tourism"~"^(attraction|museum|gallery|viewpoint|zoo|theme_park)$"]["name"]${a};`
+    + `nwr["historic"~"^(castle|fort|monument|memorial|ruins|archaeological_site|city_gate|tower|palace|manor|monastery|church|tomb|citywalls)$"]["name"]${a};`
+    + `nwr["amenity"="place_of_worship"]["name"]["wikidata"]${a};`
+    + `nwr["natural"~"^(waterfall|peak|cave_entrance|beach|hot_spring)$"]["name"]${a};`
+    + `nwr["waterway"="waterfall"]["name"]${a};`
+    + `nwr["leisure"~"^(park|garden|nature_reserve)$"]["name"]["wikidata"]${a};`
+    + `);out center tags 300;`;
+}
+
+const ACCESS = { yes: 'yes', limited: 'limited', no: 'no' };
+
 /**
- * Attractions within ~10 km of a point, nearest first. Two kinds of request: one geosearch for article titles and
- * coordinates, then the short descriptions in batches of 50 (the API limit), which decide whether each is an
- * attraction and of what kind.
- * @returns {Promise<{places: object[], dropped: number}>}
+ * Turn Overpass elements into places: attractions only, de-duplicated, notable ones first, nearest first.
+ * @returns {{places: object[], dropped: number}}
  */
-export async function nearby(lat, lon, opts = {}) {
-  if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) throw new OnlineError('input', FRIENDLY.input);
-  const geo = await getJson(apiUrl(WIKIPEDIA, { action: 'query', list: 'geosearch', gscoord: `${lat}|${lon}`, gsradius: RADIUS_M, gslimit: 100 }), opts);
-  const hits = geo.query?.geosearch;
-  if (!Array.isArray(hits)) throw new OnlineError('format', FRIENDLY.format);
-  const base = hits.filter((h) => Number.isInteger(h?.pageid) && h.pageid > 0 && typeof h.title === 'string' && Number.isFinite(h.lat) && Number.isFinite(h.lon));
-  const desc = new Map();
-  for (let i = 0; i < base.length; i += 50) {
-    const ids = base.slice(i, i + 50).map((h) => h.pageid).join('|');
-    const body = await getJson(apiUrl(WIKIPEDIA, { action: 'query', prop: 'description', pageids: ids }), opts);
-    for (const p of body.query?.pages || []) if (p && typeof p.description === 'string') desc.set(p.pageid, p.description);
-  }
+export function parseElements(elements, lat, lon) {
+  if (!Array.isArray(elements)) throw new OnlineError('format', FRIENDLY.format);
+  const seen = new Set();
   const places = [];
-  for (const h of base) {
-    const description = str(desc.get(h.pageid), 120);
-    const kind = classify(description);
-    if (!kind) continue;
-    places.push({ wp: h.pageid, name: str(h.title, 80), desc: description, kind, lat: h.lat, lon: h.lon, dist: Number.isFinite(h.dist) ? Math.round(h.dist) : null });
+  let dropped = 0;
+  for (const el of elements) {
+    const t = el?.tags;
+    const type = { node: 'n', way: 'w', relation: 'r' }[el?.type];
+    const pLat = Number(el?.lat ?? el?.center?.lat);
+    const pLon = Number(el?.lon ?? el?.center?.lon);
+    if (!t || !type || !Number.isInteger(el.id) || !inRange(pLat, pLon)) { dropped += 1; continue; }
+    const name = str(t['name:en'] || t.name, 80);
+    const kind = kindOf(t);
+    if (!name || !kind) { dropped += 1; continue; }
+    const key = `${str(t.name || name, 80).toLowerCase()}|${pLat.toFixed(3)}|${pLon.toFixed(3)}`; // by the local name, so name:en does not hide duplicates
+    if (seen.has(key)) continue; // the same thing mapped as a node and as a way
+    seen.add(key);
+    const site = str(t.website || t['contact:website'], 200);
+    places.push({
+      osm: `${type}${el.id}`,
+      name,
+      desc: describe(t),
+      kind,
+      lat: pLat,
+      lon: pLon,
+      dist: distM(lat, lon, pLat, pLon),
+      fee: t.fee === 'yes' || t.fee === 'no' ? t.fee : '',
+      hours: str(t.opening_hours, 120),
+      wheelchair: ACCESS[t.wheelchair] || '',
+      site: /^https?:\/\/[^\s<>"']{3,200}$/i.test(site) ? site : '',
+      notable: Boolean(t.wikidata || t.wikipedia),
+    });
   }
-  places.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
-  return { places: places.slice(0, 60), dropped: base.length - places.length };
+  places.sort((a, b) => Number(b.notable) - Number(a.notable) || a.dist - b.dist);
+  const top = places.slice(0, MAX_PLACES).sort((a, b) => a.dist - b.dist);
+  return { places: top.map(({ notable, ...p }) => p), dropped: dropped + Math.max(0, places.length - MAX_PLACES) };
+}
+
+// ------------------------------------------------------------------ nearby
+/** Attractions around a point. Tries the main Overpass server, then a mirror if the first is busy or unreachable. */
+export async function nearby(lat, lon, opts = {}) {
+  if (!inRange(lat, lon)) throw new OnlineError('input', FRIENDLY.input);
+  const data = overpassQuery(lat, lon, opts.radius);
+  let lastError = null;
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const body = await getJson(withParams(endpoint, { data }), opts);
+      if (typeof body.remark === 'string' && /error|timed out|out of memory/i.test(body.remark) && !Array.isArray(body.elements)) throw new OnlineError('http', FRIENDLY.http);
+      return parseElements(body.elements, lat, lon);
+    } catch (e) {
+      lastError = e;
+      if (!['http', 'timeout', 'offline'].includes(e.code)) throw e; // garbage or bad input will not improve on a mirror
+    }
+  }
+  throw lastError;
 }
 
 // -------------------------------------------------------------------- cache
 const storage = () => { try { return globalThis.localStorage || null; } catch { return null; } };
-
-export function readCache(qid) {
-  try {
-    const raw = JSON.parse(storage()?.getItem(CACHE_KEY) || 'null');
-    const hit = raw?.v === 1 ? raw.items?.[qid] : null;
-    return hit && Array.isArray(hit.places) ? hit : null;
-  } catch { return null; }
-}
 
 function readBlob() {
   let raw = null;
@@ -179,9 +245,14 @@ function saveBlob({ items, q }) {
   } catch { /* storage full or blocked: the lookup still works, it just is not kept */ }
 }
 
-export function writeCache(qid, value) {
+export function readCache(id) {
+  const hit = readBlob().items[id];
+  return hit && Array.isArray(hit.places) ? hit : null;
+}
+
+export function writeCache(id, value) {
   const blob = readBlob();
-  blob.items[qid] = value;
+  blob.items[id] = value;
   saveBlob(blob);
 }
 
@@ -204,19 +275,18 @@ export function recallCandidates(query) {
 export const clearCache = () => { try { storage()?.removeItem(CACHE_KEY); } catch { /* ignore */ } };
 
 /**
- * Places around one chosen candidate. Live when possible; if the network fails and an earlier result exists, that
- * is returned and marked `stale` so the UI can say so. `fresh: true` forces a refresh attempt.
- * @returns {Promise<{qid: string, label: string, lat: number|null, lon: number|null, places: object[], dropped: number, at: string, stale: boolean, fromCache: boolean}>}
+ * Places around one chosen candidate. Live when possible; if the network fails and an earlier result exists, that is
+ * returned and marked `stale` so the UI can say so. `fresh: true` forces a refresh attempt.
+ * @returns {Promise<{id: string, label: string, lat: number, lon: number, places: object[], dropped: number, at: string, stale: boolean, fromCache: boolean}>}
  */
 export async function lookup(candidate, { fresh = false, now = () => new Date().toISOString(), ...opts } = {}) {
-  const cached = readCache(candidate.qid);
+  if (!candidate || !inRange(candidate.lat, candidate.lon)) throw new OnlineError('input', FRIENDLY.input);
+  const cached = readCache(candidate.id);
   if (cached && !fresh) return { ...cached, stale: false, fromCache: true };
   try {
-    const c = await coordsOf(candidate.qid, opts);
-    if (!c) return { qid: candidate.qid, label: candidate.label, lat: null, lon: null, places: [], dropped: 0, at: now(), stale: false, fromCache: false };
-    const { places, dropped } = await nearby(c.lat, c.lon, opts);
-    const result = { qid: candidate.qid, label: candidate.label, lat: c.lat, lon: c.lon, places, dropped, at: now() };
-    writeCache(candidate.qid, result);
+    const { places, dropped } = await nearby(candidate.lat, candidate.lon, opts);
+    const result = { id: candidate.id, label: candidate.label, lat: candidate.lat, lon: candidate.lon, places, dropped, at: now() };
+    writeCache(candidate.id, result);
     return { ...result, stale: false, fromCache: false };
   } catch (e) {
     if (cached && (e.code === 'offline' || e.code === 'timeout' || e.code === 'http')) return { ...cached, stale: true, fromCache: true };

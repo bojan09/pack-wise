@@ -73,9 +73,9 @@ All planned phases are complete: packing (lists, bags, Studio, templates, tasks,
 
 Mobile now has a **More** tab with everything the desktop sidebar has (Studio, Explore, Taste, My Guide, Templates, Settings). New trips must say whether they are **within your country or abroad** (older trips are asked once, with a one-tap banner), and the packing list's category headers are color-banded.
 
-## v1.10.0: worldwide places (optional, online)
+## v1.11.0: worldwide places from OpenStreetMap (optional, online)
 
-Any town or city can now be looked up: **Explore → Find places online** searches Wikidata and Wikipedia for attractions within 10 km, lists them by type with exact coordinates and map links, and lets you save them into My Guide. It is opt-in (nothing is sent until you tap *Search online*, and only the place name and then its coordinates), results are cached for offline use, and nothing about prices or hours is ever claimed. See `docs/DESTINATION_DATA.md`.
+Any town or city can be looked up: **Explore → Find places online** searches OpenStreetMap (no API key) for attractions within 6 km, lists them by type with exact coordinates and map links, shows entry fee, opening hours and wheelchair access where mappers tagged them (labelled as community data), and lets you save them into My Guide. It is opt-in (nothing is sent until you tap *Search online*, and only the place name, then its coordinates), results are cached for offline use, and ticket prices are never shown. See `docs/DESTINATION_DATA.md`.
 
 ## Run it
 

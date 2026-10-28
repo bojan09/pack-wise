@@ -587,9 +587,9 @@ export function createStore(adapter) {
   /** Save a place found by the online lookup. The entry keeps its own snapshot (name, description, coordinates), so it works offline and survives backup. */
   function saveWebPlace(tripId, place) {
     if (!find('trips', tripId) || !place) return null;
-    const refId = `w-${place.wp}`;
+    const refId = place.osm ? `o-${place.osm}` : `w-${place.wp}`;
     const cur = find('entries', entryId(tripId, 'web', refId));
-    const next = normalizeEntry({ ...(cur ? touch(cur) : { tripId, kind: 'web', refId, order: nextOrder_(tripId), createdAt: nowIso() }), tripId, kind: 'web', refId, label: place.name, sub: place.desc, type: place.kind, lat: place.lat, lon: place.lon, wp: place.wp, saved: true });
+    const next = normalizeEntry({ ...(cur ? touch(cur) : { tripId, kind: 'web', refId, order: nextOrder_(tripId), createdAt: nowIso() }), tripId, kind: 'web', refId, label: place.name, sub: place.desc, type: place.kind, lat: place.lat, lon: place.lon, wp: place.wp || 0, osm: place.osm || '', fee: place.fee || '', hours: place.hours || '', wheelchair: place.wheelchair || '', site: place.site || '', saved: true });
     if (!next) return null;
     commit({ put: { entries: [next] } });
     return next;

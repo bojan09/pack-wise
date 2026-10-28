@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 4; // v2 added guide `entries`; v3 user-written `custom` entries; v4 `web` entries saved from the optional online lookup (coordinates + Wikipedia page id)
-export const APP_VERSION = '1.10.0';
+export const SCHEMA_VERSION = 5; // v2 guide `entries`; v3 user-written `custom` entries; v4 `web` entries from the online lookup; v5 web entries come from OpenStreetMap (osm id, fee, hours, wheelchair, website); v4 Wikipedia ones stay valid
+export const APP_VERSION = '1.11.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -301,7 +301,9 @@ export function normalizeEntry(raw) {
   if (!isObj(raw) || !isId(raw.tripId) || !ENTRY_KINDS.includes(raw.kind) || !isRef(raw.refId)) return null;
   const named = raw.kind === 'custom' || raw.kind === 'web'; // entries that carry their own snapshot instead of pointing into a catalog
   if (named && !cleanText(raw.label, 80)) return null; // a place without a name is meaningless
-  if (raw.kind === 'web' && !(Number.isInteger(raw.wp) && raw.wp > 0)) return null; // the Wikipedia page it came from
+  const osm = raw.kind === 'web' && typeof raw.osm === 'string' && /^[nwr]\d{1,12}$/.test(raw.osm) ? raw.osm : ''; // OpenStreetMap object, e.g. n123 / w45 / r6
+  const wp = raw.kind === 'web' && Number.isInteger(raw.wp) && raw.wp > 0 ? raw.wp : 0; // legacy v4 entries came from a Wikipedia page
+  if (raw.kind === 'web' && !osm && !wp) return null; // a found place must say where it was found
   const coord = (v, max) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? Math.round(v * 1e6) / 1e6 : null);
   const createdAt = cleanIso(raw.createdAt) || nowIso();
   return {
@@ -317,7 +319,12 @@ export function normalizeEntry(raw) {
     type: named && CUSTOM_TYPES.includes(raw.type) ? raw.type : '',
     lat: raw.kind === 'web' ? coord(raw.lat, 90) : null,
     lon: raw.kind === 'web' ? coord(raw.lon, 180) : null,
-    wp: raw.kind === 'web' ? raw.wp : 0,
+    wp,
+    osm,
+    fee: raw.kind === 'web' && ['yes', 'no'].includes(raw.fee) ? raw.fee : '', // OpenStreetMap fee=yes|no; '' = not tagged
+    hours: raw.kind === 'web' ? cleanText(raw.hours, 120) : '', // OpenStreetMap opening_hours, shown verbatim and labelled as community data
+    wheelchair: raw.kind === 'web' && ['yes', 'limited', 'no'].includes(raw.wheelchair) ? raw.wheelchair : '',
+    site: raw.kind === 'web' && typeof raw.site === 'string' && /^https?:\/\/[^\s<>"']{3,200}$/i.test(raw.site.trim()) ? raw.site.trim() : '',
     day: Number.isInteger(raw.day) && raw.day >= 1 && raw.day <= 60 ? raw.day : null,
     order: Number.isFinite(raw.order) ? raw.order : 0,
     createdAt,

@@ -36,6 +36,12 @@ const MIGRATIONS = [
     to: 4,
     up: (data) => data,
   },
+  {
+    // v4 -> v5: web entries may carry an OpenStreetMap id, fee, hours, wheelchair and website. Additive.
+    from: 4,
+    to: 5,
+    up: (data) => data,
+  },
 ];
 
 /**
