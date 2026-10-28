@@ -144,6 +144,10 @@ export const osmSearchUrl = (text) => `https://www.openstreetmap.org/search?quer
 export const mapSearchUrl = (place, dest) => osmSearchUrl(`${place.name}, ${dest.name}, ${dest.country}`);
 export const googleMapsUrl = (place, dest) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([place.name, dest.name, dest.country].filter(Boolean).join(', '))}`;
 /** Search links for a destination the catalog does not cover: ordinary web searches, nothing is claimed. */
+/** Links for a place whose coordinates came from a source (the online lookup): exact pins, no guessing. */
+export const googleCoordUrl = (lat, lon) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+export const osmCoordUrl = (lat, lon) => `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=17/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`;
+export const wikipediaPageUrl = (pageId) => `https://en.wikipedia.org/?curid=${encodeURIComponent(pageId)}`;
 export const wikipediaTextUrl = (text) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(text)}`;
 export const thingsToDoUrl = (text) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`things to do near ${text}`)}`;
 export const wikipediaSearchUrl = (place, dest) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${place.name} ${dest.name}`)}`;

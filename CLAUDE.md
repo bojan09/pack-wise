@@ -9,7 +9,8 @@ Vanilla HTML/CSS/JS (ES modules) offline-first PWA. No framework, no build step,
 - Visual reference: `docs/design/PackWise_Approved_Design.webp`. Match it; palette ocean `#123D40`, teal `#31B6A6`, coral `#F28A72`, cream `#F8F5EF`, sand `#E7B66C`.
 - Invariants: `0 <= packed <= target`; moving an item is a single-record update (never double-count); travel tasks never affect packing progress.
 - Honest data only: the destination/food catalogs are editorial. Never add prices, hours, coordinates, ratings or photos without a verified, dated source (see `docs/DESTINATION_DATA.md`). Packing lists are only ever changed by an explicit user tap.
-- Schema is v3 (`js/models.js`); any data-shape change needs a migration, a `SCHEMA_VERSION` bump and tests.
+- The only network code is `js/online.js` (two fixed hosts, allow-list enforced there, in the CSP and in a test). Never add another host, an API key or an automatic request: lookups run only on a user tap.
+- Schema is v4 (`js/models.js`); any data-shape change needs a migration, a `SCHEMA_VERSION` bump and tests.
 - Bump `APP_VERSION` (js/models.js) **and** `CACHE_VERSION` (sw.js) together, and list every new runtime file in `PRECACHE` (a test fails otherwise).
 
 ## Commands
@@ -19,6 +20,6 @@ Vanilla HTML/CSS/JS (ES modules) offline-first PWA. No framework, no build step,
 - `npm run icons` — regenerate PNG icons from `assets/icons/icon.svg`
 
 ## Layout
-`js/models.js` (normalizers) → `js/store.js` (mutations) → `js/screens/*` (UI). Pure logic lives in `progress.js`, `templates.js`, `selectors.js`, `validate.js`, `migrations.js`, `guide.js`, `taste.js`, `plan.js` and is unit-tested without a DOM. Catalogs: `js/data/catalog.js` (places), `js/data/food.js` (dishes). Item pictures: `js/ui/itemart.js`. Guide screens (`explore`, `taste`, `guide`) are lazy-loaded and precached.
+`js/models.js` (normalizers) → `js/store.js` (mutations) → `js/screens/*` (UI). Pure logic lives in `progress.js`, `templates.js`, `selectors.js`, `validate.js`, `migrations.js`, `guide.js`, `taste.js`, `plan.js` and is unit-tested without a DOM. Catalogs: `js/data/catalog.js` (places), `js/data/food.js` (dishes); optional live lookup: `js/online.js`. Item pictures: `js/ui/itemart.js`. Guide screens (`explore`, `taste`, `guide`) are lazy-loaded and precached.
 
 Docs: `docs/DEVELOPMENT_HANDOFF.md` (architecture + per-phase notes), `docs/DESTINATION_DATA.md` (sources, licensing), `docs/KNOWN_LIMITATIONS.md`, `docs/PRIVACY.md`, `docs/RELEASE_CHECKLIST.md`.

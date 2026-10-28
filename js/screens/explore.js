@@ -87,7 +87,7 @@ export function ExploreScreen(ctx) {
       why === 'country' ? null : h('section', { class: 'card own-places' },
         h('h2', { class: 'card-title', text: 'Plan it yourself' }),
         h('p', { class: 'muted small', text: 'Add the places you already know about. They go into My Guide, where you can give them days and get packing ideas, such as walking shoes for a hike.' }),
-        h('div', { class: 'plan-actions' }, button({ label: 'Add your own place', icon: 'plus', variant: 'primary', key: 'add-own', onClick: () => customPlaceDialog({ store, tripId }) }), button({ label: 'Open My Guide', icon: 'heart', variant: 'secondary', href: `#/trip/${tripId}/guide` })),
+        h('div', { class: 'plan-actions' }, button({ label: 'Find places online', icon: 'search', variant: 'primary', key: 'find-online', href: `#/trip/${tripId}/online` }), button({ label: 'Add your own place', icon: 'plus', variant: 'secondary', key: 'add-own', onClick: () => customPlaceDialog({ store, tripId }) }), button({ label: 'Open My Guide', icon: 'heart', variant: 'ghost', href: `#/trip/${tripId}/guide` })),
         searchStops.length ? h('div', { class: 'search-links' }, h('p', { class: 'muted small', text: 'Look around (opens a search in a new tab; PackWise does not vouch for the results):' }), searchStops.map((s) => h('div', { class: 'search-row' }, h('strong', { text: s }), h('a', { class: 'link', href: thingsToDoUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 14 }), 'Things to do on Google Maps', h('span', { class: 'sr-only', text: ` near ${s} (opens in a new tab)` })), h('a', { class: 'link', href: osmSearchUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('pin', { size: 14 }), 'OpenStreetMap', h('span', { class: 'sr-only', text: ` search for ${s} (opens in a new tab)` })), h('a', { class: 'link', href: wikipediaTextUrl(s), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 14 }), 'Wikipedia', h('span', { class: 'sr-only', text: ` search for ${s} (opens in a new tab)` }))))) : null),
       h('h2', { class: 'section-title', text: 'Or browse a covered destination' }),
       coveredList(),
@@ -185,6 +185,7 @@ export function ExploreScreen(ctx) {
         filterBar,
         h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${plural(visible.length, 'place')} shown` }),
         h('div', { class: 'guide-results' }, results),
+        h('section', { class: 'card browse-other' }, h('h2', { class: 'card-title', text: 'Looking for more?' }), h('p', { class: 'muted small', text: `This guide is short. You can also look up more places near ${dest.name} online (optional; searches Wikipedia and Wikidata).` }), h('div', {}, button({ label: 'Find more places online', icon: 'search', variant: 'secondary', key: 'find-online', href: `#/trip/${tripId}/online?q=${encodeURIComponent(dest.name)}` }))),
         h('section', { class: 'card browse-other' }, h('h2', { class: 'card-title', text: 'Browse another covered destination' }), coveredList()),
         disclaimer(),
       );

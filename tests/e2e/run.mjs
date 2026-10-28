@@ -22,18 +22,18 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.9.1'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.10.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
 const results = [];
-async function test(name, fn, { sw = false, viewport = { width: 390, height: 844 }, ctxOptions = {} } = {}) {
+async function test(name, fn, { sw = false, viewport = { width: 390, height: 844 }, ctxOptions = {}, ignoreConsole = null } = {}) {
   if (process.env.E2E_GREP && !new RegExp(process.env.E2E_GREP, 'i').test(name)) return; // dev filter: E2E_GREP="haptics|print"
   const ctx = await browser.newContext({ viewport, serviceWorkers: sw ? 'allow' : 'block', acceptDownloads: true, ...ctxOptions });
   const page = await ctx.newPage();
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') problems.push(`console.error: ${m.text()}`); });
+  page.on('console', (m) => { if (m.type() === 'error' && !ignoreConsole?.test(m.text())) problems.push(`console.error: ${m.text()}`); });
   try {
     await fn({ page, ctx });
     assert.deepEqual(problems, [], 'unexpected browser errors');
@@ -452,7 +452,7 @@ await test('accessible names: every control is labelled, progress bars exposed',
     assert.deepEqual(bad, [], `a11y issues on ${route}`);
   };
   const id = (await tripState(page)).trips[0].id;
-  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/taste`, `/trip/${id}/guide`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
+  for (const r of ['/', '/trips', '/trips/new', `/trip/${id}`, `/trip/${id}/tasks`, `/trip/${id}/summary`, `/trip/${id}/edit`, `/trip/${id}/studio`, '/templates', `/trip/${id}/explore`, `/trip/${id}/taste`, `/trip/${id}/guide`, `/trip/${id}/online`, `/trip/${id}/print`, '/settings', '/settings?tab=data', '/settings?tab=preferences', '/settings?tab=about']) await check(r);
 });
 
 await test('reduced motion disables animations; page still usable', async ({ page }) => {
@@ -1512,7 +1512,7 @@ await test('dark theme: every screen renders without overflow and with readable 
   await skipWelcome(page);
   await createTrip(page);
   const id = await firstTrip(page);
-  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['taste', `/trip/${id}/taste`], ['guide', `/trip/${id}/guide`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
+  for (const [name, route] of [['dashboard', '/'], ['trips', '/trips'], ['create', '/trips/new'], ['checklist', `/trip/${id}`], ['studio', `/trip/${id}/studio`], ['templates', '/templates'], ['explore', `/trip/${id}/explore`], ['taste', `/trip/${id}/taste`], ['guide', `/trip/${id}/guide`], ['online', `/trip/${id}/online`], ['tasks', `/trip/${id}/tasks`], ['summary', `/trip/${id}/summary`], ['print', `/trip/${id}/print`], ['settings', '/settings']]) {
     await page.goto(`${BASE}#${route}`);
     await page.waitForTimeout(200);
     const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bg: getComputedStyle(document.body).backgroundColor }));
@@ -1875,7 +1875,7 @@ await test('explore: saved places survive backup/restore and trip duplication; d
   await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
-  assert.equal(file.schemaVersion, 3);
+  assert.equal(file.schemaVersion, 4);
   assert.equal(file.data.entries.length, 2);
   await page.click('button:has-text("Clear data")');
   await page.click('dialog button:has-text("Delete everything")');
@@ -1908,14 +1908,14 @@ await test('explore: an existing v1 database upgrades to v2 without losing trips
   assert.deepEqual(after.entries, []);
   assert.equal(await page.locator('.banner-error').count(), 0);
   const raw = await idbSnapshotRaw(page);
-  assert.equal(raw.version, 3);
+  assert.equal(raw.version, 4);
   await page.goto(explorePath(after.trips[0].id));
   await page.waitForSelector('.place-card');
   await page.click('.save-btn >> nth=0');
   assert.equal((await tripState(page)).entries.length, 1);
 });
 
-await test('upgrade: a v2 database (saved places, no own places) upgrades to v3 with everything intact', async ({ page }) => {
+await test('upgrade: a v2 database (saved places, no own places) upgrades to the current schema with everything intact', async ({ page }) => {
   await skipWelcome(page);
   await createTrip(page, { dest: 'Belgrade' });
   const id = await firstTrip(page);
@@ -1931,7 +1931,7 @@ await test('upgrade: a v2 database (saved places, no own places) upgrades to v3 
   assert.deepEqual(after.trips, before.trips);
   assert.deepEqual(after.entries, before.entries);
   assert.equal(await page.locator('.banner-error').count(), 0);
-  assert.equal((await idbSnapshotRaw(page)).version, 3);
+  assert.equal((await idbSnapshotRaw(page)).version, 4);
   await page.goto(guidePath(id));
   await page.waitForSelector('.guide-row');
   await page.click('button:has-text("Add your own place")');
@@ -2075,7 +2075,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.9.1']);
+  assert.deepEqual(keys, ['packwise-v1.10.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2115,7 +2115,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.9.1', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.10.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -3007,6 +3007,211 @@ await test('mobile: the More tab reaches every feature the desktop sidebar has; 
   assert.equal(await page.getAttribute('.nav-item[data-nav=settings]', 'aria-current'), 'page');
 });
 
+// ============================================================ Online place lookup (Wikidata + Wikipedia), mocked
+const onlinePath = (id, q = '') => `${BASE}#/trip/${id}/online${q}`;
+/** Mock both hosts. `state.fail` aborts every request; `log` records them. */
+async function mockWeb(page, state = {}) {
+  const log = [];
+  await page.route(/^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\//, async (route) => {
+    const url = new URL(route.request().url());
+    log.push({ host: url.hostname, params: Object.fromEntries(url.searchParams), method: route.request().method() });
+    if (state.fail) return route.abort('failed');
+    const p = url.searchParams;
+    const body = (() => {
+      if (url.hostname === 'www.wikidata.org' && p.get('action') === 'wbsearchentities') return { search: [{ id: 'Q1', label: 'Veles', description: 'city in North Macedonia' }, { id: 'Q2', label: 'Veles', description: 'village in Bulgaria' }] };
+      if (url.hostname === 'www.wikidata.org' && p.get('action') === 'wbgetclaims') return p.get('entity') === 'Q9' ? { claims: {} } : { claims: { P625: [{ mainsnak: { datavalue: { value: { latitude: 41.7156, longitude: 21.7756 } } } }] } };
+      if (p.get('list') === 'geosearch') return { query: { geosearch: [{ pageid: 10, title: 'Church of St. Panteleimon', lat: 41.71, lon: 21.77, dist: 300 }, { pageid: 11, title: 'Veles Clock Tower', lat: 41.72, lon: 21.78, dist: 120 }, { pageid: 12, title: 'Some Village', lat: 41.8, lon: 21.8, dist: 900 }, { pageid: 14, title: 'Vardar', lat: 41.71, lon: 21.76, dist: 700 }] } };
+      if (p.get('prop') === 'description') { const d = { 10: 'Orthodox church in Veles', 11: 'Clock tower in Veles, North Macedonia', 12: 'Village in North Macedonia', 14: 'River in North Macedonia' }; return { query: { pages: p.get('pageids').split('|').map((id) => ({ pageid: +id, title: 't', description: d[id] })) } }; }
+      return { error: { code: 'unexpected' } };
+    })();
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+  });
+  return log;
+}
+
+await test('online: nothing is sent until Search online; ambiguity is shown; only two hosts; nearby attractions, no invented data', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Veles - Babuna', type: 'Custom' });
+  const id = await firstTrip(page);
+  const log = await mockWeb(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.own-places');
+  await page.click('a:has-text("Find places online")');
+  await page.waitForSelector('.online-consent');
+  assert.ok(page.url().endsWith(`/trip/${id}/online`));
+  const consent = await page.locator('.online-consent').innerText();
+  assert.match(consent, /Only the place name you type/);
+  assert.match(consent, /Nothing is sent until you tap Search online/);
+  assert.match(consent, /No prices, opening hours or admission/);
+  assert.deepEqual(log, [], 'opening the page sends nothing');
+  assert.equal(await page.inputValue('input[name=q]'), 'Veles', 'prefilled with the first stop, not the whole trip text');
+  assert.deepEqual(await page.locator('[aria-label="Stops on this trip"] .chip').allInnerTexts(), ['Veles', 'Babuna']);
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.cand');
+  assert.deepEqual(await page.locator('.cand').allInnerTexts().then((a) => a.map((t) => t.replace(/\s+/g, ' ').trim())), ['Veles city in North Macedonia', 'Veles village in Bulgaria']);
+  assert.equal(await page.locator('.place-card').count(), 0, 'nothing is guessed before the user picks');
+  await page.click('.cand:has-text("North Macedonia")');
+  await page.waitForSelector('.place-card');
+  // only the typed name and the chosen place's coordinates were sent, to exactly two hosts
+  assert.deepEqual([...new Set(log.map((r) => r.host))].sort(), ['en.wikipedia.org', 'www.wikidata.org']);
+  assert.ok(log.every((r) => r.method === 'GET' && r.params.origin === '*'));
+  const sent = JSON.stringify(log.map((r) => r.params));
+  assert.ok(sent.includes('"search":"Veles"') && sent.includes('41.7156|21.7756'));
+  assert.ok(!/Babuna|Veles - |Custom|Rome|2026/.test(sent), 'no trip name, dates or notes are sent');
+  // results: attractions only, nearest first, with source, coordinates and "Check admission"
+  assert.deepEqual(await page.locator('.web-card h3').allInnerTexts(), ['Veles Clock Tower', 'Church of St. Panteleimon', 'Vardar']);
+  assert.equal(await page.locator('.web-card .adm-badge').count(), 3);
+  assert.ok((await page.locator('.web-card .adm-badge').allInnerTexts()).every((t) => t === 'Check admission'));
+  assert.match(await page.locator('.web-card').first().innerText(), /41\.72000, 21\.78000 · coordinates from Wikidata/);
+  assert.match(await page.locator('.dest-card').innerText(), /Live data from Wikidata and Wikipedia, fetched/);
+  assert.match(await page.locator('.explore-screen').innerText(), /1 nearby article left out because it is not clearly an attraction/);
+  const text = await page.locator('.explore-screen').innerText();
+  assert.ok(!/[€$£]\s?\d|\b\d{1,2}:\d{2}\b|opening hours: /i.test(text.replace(/fetched [^.]*\./, '')), 'no prices or hours (the fetch time stamp is not an opening hour)');
+  const links = await page.evaluate(() => [...document.querySelector('.web-card').querySelectorAll('a')].map((a) => [a.target, a.rel, new URL(a.href).host, a.href]));
+  assert.deepEqual(links.map((l) => l.slice(0, 3)), [['_blank', 'noopener noreferrer', 'www.google.com'], ['_blank', 'noopener noreferrer', 'www.openstreetmap.org'], ['_blank', 'noopener noreferrer', 'en.wikipedia.org']]);
+  assert.match(links[0][3], /query=41\.72%2C21\.78$/);
+  assert.match(links[2][3], /curid=11$/);
+  // kind filter appears because there are several kinds, and works
+  await page.click('.filter-bar .chip:has-text("Sacred sites")');
+  assert.deepEqual(await page.locator('.web-card h3').allInnerTexts(), ['Church of St. Panteleimon']);
+  // a place without coordinates (a country, say) gets an explanation instead of a guess
+  await page.click('button:has-text("Search again")');
+  assert.equal(await page.locator('.web-card').count(), 0);
+});
+
+await test('online: saved places go to My Guide with exact coordinates, planning, packing ideas, exports and backup', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Veles', type: 'Custom', start: '2026-11-29', end: '2026-12-01' });
+  const id = await firstTrip(page);
+  await mockWeb(page);
+  await page.goto(onlinePath(id));
+  await page.click('button:has-text("Search online")');
+  await page.click('.cand:has-text("North Macedonia")');
+  await page.waitForSelector('.web-card');
+  await page.click('.save-btn[aria-label^="Save Vardar"]');
+  await page.click('.save-btn[aria-label^="Save Veles Clock Tower"]');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.filter((e) => e.kind === 'web' && e.saved).length === 2);
+  const e = (await tripState(page)).entries.find((x) => x.label === 'Vardar');
+  assert.deepEqual([e.kind, e.refId, e.type, e.lat, e.lon, e.wp, e.sub], ['web', 'w-14', 'nature', 41.71, 21.76, 14, 'River in North Macedonia']);
+  await page.click('.save-btn[aria-label^="Saved: Vardar"]'); // toggle off removes it outright
+  await page.waitForFunction(() => window.__packwise.store.state.entries.filter((x) => x.kind === 'web').length === 1);
+  await page.click('.save-btn[aria-label^="Save Vardar"]');
+  // My Guide
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row');
+  assert.deepEqual(await page.locator('.guide-section h2').allInnerTexts(), ['Found online']);
+  const row = page.locator('.guide-row:has-text("Veles Clock Tower")');
+  assert.match(await row.innerText(), /41\.72000, 21\.78000 \(from Wikidata\)/);
+  assert.match(await row.innerText(), /From Wikipedia/);
+  assert.match(await row.innerText(), /Check admission/);
+  assert.equal(await row.locator('a[href*="curid=11"]').count(), 1);
+  // plan, hints (a river = nature → shoes/water), draft plan includes it
+  await page.selectOption('select[aria-label="Day for Veles Clock Tower"]', '2');
+  await page.evaluate((tid) => { const st = window.__packwise.store; st.state.items.filter((i) => i.tripId === tid && /shoe|bottle/i.test(i.name)).forEach((i) => st.deleteItem(i.id)); }, id);
+  await page.waitForSelector('.hint:has-text("walking shoes")');
+  // text export carries the coordinates and the "not reviewed" footer
+  await page.evaluate(() => { window.__copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true }); });
+  await page.click('button:has-text("Copy as text")');
+  await page.waitForFunction(() => window.__copied.length > 0);
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, /Veles Clock Tower \(Clock tower in Veles, North Macedonia\) \[Found online\] @ 41\.72000, 21\.78000/);
+  assert.match(copied, /not reviewed by PackWise/);
+  // backup → clear → restore keeps the snapshot (name, description, coordinates)
+  await page.evaluate(() => window.__packwise.store.flush());
+  await page.goto(`${BASE}#/settings?tab=data`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
+  const json = readFileSync(await dl.path(), 'utf8');
+  assert.ok(JSON.parse(json).data.entries.some((x) => x.kind === 'web' && x.wp === 11 && x.lat === 41.72));
+  await page.click('button:has-text("Clear data")');
+  await page.click('dialog button:has-text("Delete everything")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.length === 0);
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+  await page.click('dialog button:has-text("Import")');
+  await page.waitForFunction(() => window.__packwise.store.state.entries.filter((x) => x.kind === 'web').length === 2);
+  await page.goto(guidePath(id));
+  await page.waitForSelector('.guide-row:has-text("Veles Clock Tower")');
+  // duplicate copies saved online places
+  const copy = await page.evaluate((tid) => window.__packwise.store.duplicateTrip(tid), id);
+  assert.equal((await tripState(page)).entries.filter((x) => x.tripId === copy.id && x.kind === 'web').length, 2);
+});
+
+await test('online: failures are friendly, earlier results are recalled offline, garbage is never shown as places', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Veles', type: 'Custom' });
+  const id = await firstTrip(page);
+  const state = {};
+  await mockWeb(page, state);
+  await page.goto(onlinePath(id));
+  // first, a working search is remembered
+  await page.click('button:has-text("Search online")');
+  await page.click('.cand:has-text("North Macedonia")');
+  await page.waitForSelector('.web-card');
+  // refresh while the network is down: the saved copy is shown and flagged
+  state.fail = true;
+  await page.click('button:has-text("Refresh")');
+  await page.waitForSelector('.banner-warn:has-text("Could not refresh")');
+  assert.equal(await page.locator('.web-card').count(), 3, 'the earlier results stay usable');
+  // a fresh visit offline: the same search is recalled instead of failing
+  await page.goto(onlinePath(id));
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.cand');
+  assert.match(await page.locator('[aria-label="Which place do you mean?"] .banner-warn').innerText(), /No connection[\s\S]*Showing what this search found earlier/);
+  await page.click('.cand:has-text("North Macedonia")');
+  await page.waitForSelector('.web-card');
+  assert.match(await page.locator('.dest-card').innerText(), /Shown from the copy saved on this device/);
+  // a search that was never made has nothing to recall: a clear error and a retry path, no fake results
+  await page.click('button:has-text("Search again")');
+  await page.fill('input[name=q]', 'Atlantis');
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.banner-warn[role=alert]');
+  assert.match(await page.locator('.banner-warn[role=alert]').innerText(), /No connection/);
+  assert.equal(await page.locator('.place-card').count(), 0);
+  // too-short input never reaches the network
+  await page.fill('input[name=q]', 'a');
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.banner-warn[role=alert]:has-text("at least two letters")');
+  // the service answering with nonsense is reported, not displayed
+  state.fail = false;
+  await page.unroute(/^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\//);
+  await page.route(/^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\//, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"unexpected":true}' }));
+  await page.fill('input[name=q]', 'Skopje');
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.banner-warn[role=alert]:has-text("unexpected")');
+  await page.unroute(/^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\//);
+  await page.route(/^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\//, (r) => r.fulfill({ status: 429, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{}' }));
+  await page.click('button:has-text("Search online")');
+  await page.waitForSelector('.banner-warn[role=alert]:has-text("busy or unavailable")');
+}, { ignoreConsole: /Failed to load resource/ }); // the mocked failures are the point of this test
+
+await test('online: reachable from a covered destination, keyboard-operable, labelled, no overflow at 360px', async ({ page }) => {
+  await skipWelcome(page);
+  await createTrip(page, { dest: 'Belgrade, Serbia' });
+  const id = await firstTrip(page);
+  await mockWeb(page);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.place-card');
+  await page.click('a:has-text("Find more places online")');
+  await page.waitForSelector('.online-consent');
+  assert.equal(await page.inputValue('input[name=q]'), 'Belgrade', 'covered destination is passed along');
+  // keyboard: type, Enter submits, arrow/Tab to a candidate and Enter picks it
+  await page.focus('input[name=q]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.cand');
+  await page.focus('.cand >> nth=0');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.web-card');
+  await page.focus('.save-btn[aria-label^="Save Veles Clock Tower"]');
+  await page.keyboard.press('Space');
+  await page.waitForSelector('.save-btn.is-saved');
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-key')), 'save-w11', 'focus stays on the heart');
+  const unlabeled = await page.evaluate(() => [...document.querySelectorAll('#view button, #view a[href], #view input')].filter((el) => !(el.getAttribute('aria-label') || el.textContent || el.labels?.[0]?.textContent || '').trim()).map((e) => e.outerHTML.slice(0, 70)));
+  assert.deepEqual(unlabeled, []);
+  assert.equal(await page.locator('h1').count(), 1);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal overflow');
+});
+
+
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   const listed = new Set([...sw.matchAll(/^\s+'([^']+)',$/gm)].map((m) => m[1]));
@@ -3027,7 +3232,7 @@ await test('no innerHTML / eval / external URLs in app code', async () => {
     if (/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(/.test(src)) offenders.push(`${f}: unsafe API`);
     const urls = [...src.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
     // guide.js builds user-opened outbound search links (never fetched); CSP still blocks any fetch to them
-    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : null;
+    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : f.endsWith('js/online.js') ? /^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org)\// : f.endsWith('index.html') ? /^https:\/\/(www\.wikidata\.org|en\.wikipedia\.org);?$/ : null; // the only network module: two fixed hosts
     if (allowed) urls.splice(0, urls.length, ...urls.filter((u) => !allowed.test(u)));
     if (urls.length) offenders.push(`${f}: external URL ${urls[0]}`);
   }

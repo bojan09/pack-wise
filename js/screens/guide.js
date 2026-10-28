@@ -6,7 +6,7 @@ import { icon } from '../ui/icons.js';
 import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { companionBubble } from '../ui/bubble.js';
 import { toast } from '../ui/toast.js';
-import { ADMISSION, googleMapsUrl } from '../guide.js';
+import { ADMISSION, googleCoordUrl, googleMapsUrl, osmCoordUrl, wikipediaPageUrl } from '../guide.js';
 import { GUIDE_FOOT, dayCount, draftPlan, groupByDay, groupByInterest, guideFilename, guideModel, guideToText, packHints, planned, resolveGuide } from '../plan.js';
 import { downloadFile } from '../backup.js';
 import { customPlaceDialog } from './customPlace.js';
@@ -33,8 +33,8 @@ export function GuideScreen(ctx) {
 
   // ------------------------------------------------------------------ actions
   function remove(row) {
-    if (row.kind === 'custom') {
-      const gone = store.removeEntry(tripId, 'custom', row.entry.refId);
+    if (row.kind === 'custom' || row.kind === 'web') {
+      const gone = store.removeEntry(tripId, row.kind, row.entry.refId);
       if (gone) toast(`Removed “${row.title}”`, { action: { label: 'Undo', run: () => store.restoreEntry(gone) } });
       return;
     }
@@ -117,6 +117,7 @@ export function GuideScreen(ctx) {
     if (row.kind === 'place' && row.place) tags.push(h('span', { class: `tag adm-tag adm-tag-${row.place.admission}`, text: ADMISSION[row.place.admission].label }));
     if (row.kind === 'food') tags.push(h('span', { class: 'tag', text: 'Food & drink' }));
     if (row.kind === 'custom') tags.push(h('span', { class: 'tag', text: 'My place' }));
+    if (row.kind === 'web') tags.push(h('span', { class: 'tag', text: 'From Wikipedia' }), h('span', { class: 'tag adm-tag adm-tag-check', text: 'Check admission' }));
     if (row.kind === 'food' && row.entry.tried) tags.push(h('span', { class: 'tag tag-family', text: 'Tried' }));
     return h(
       'li',
@@ -127,6 +128,11 @@ export function GuideScreen(ctx) {
         h('span', { class: 'muted small', text: row.sub }),
         tags.length ? h('div', { class: 'place-tags' }, tags) : null,
         row.entry.note ? h('span', { class: 'small guide-note', text: `Note: ${row.entry.note}` }) : null,
+        row.kind === 'web' ? h('div', { class: 'web-links' },
+          row.entry.lat !== null ? h('span', { class: 'muted small coords', text: `${row.entry.lat.toFixed(5)}, ${row.entry.lon.toFixed(5)} (from Wikidata)` }) : null,
+          row.entry.lat !== null ? h('a', { class: 'link small', href: googleCoordUrl(row.entry.lat, row.entry.lon), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` at the coordinates of ${row.title} (opens in a new tab)` })) : null,
+          row.entry.lat !== null ? h('a', { class: 'link small', href: osmCoordUrl(row.entry.lat, row.entry.lon), target: '_blank', rel: 'noopener noreferrer' }, icon('pin', { size: 13 }), 'OpenStreetMap', h('span', { class: 'sr-only', text: ` at the coordinates of ${row.title} (opens in a new tab)` })) : null,
+          h('a', { class: 'link small', href: wikipediaPageUrl(row.entry.wp), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Wikipedia', h('span', { class: 'sr-only', text: ` article about ${row.title} (opens in a new tab)` }))) : null,
         row.kind === 'custom' ? h('a', { class: 'link small', href: googleMapsUrl(row.place, { name: tripPlace, country: '' }), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` search for ${row.title} (opens in a new tab)` })) : null,
         row.kind === 'place' && row.place ? h('a', { class: 'link small', href: googleMapsUrl(row.place, row.dest), target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 13 }), 'Google Maps', h('span', { class: 'sr-only', text: ` for ${row.title} (opens in a new tab)` })) : null),
       h('div', { class: 'guide-row-actions' },
@@ -249,7 +255,7 @@ export function GuidePrintScreen(ctx) {
           h('h1', { tabindex: '-1', text: m.title }),
           m.meta ? h('p', { class: 'print-meta', text: m.meta }) : null,
           m.byDay ? h('p', { class: 'print-meta', text: 'A draft arranged by hand: no times, routes or durations.' }) : null,
-          m.count ? m.sections.map((s) => h('section', { class: 'print-section' }, h('h2', { text: s.label }), h('ul', {}, s.rows.map((r) => h('li', {}, r.tried === null ? null : box(r.tried), h('span', { class: 'print-name', text: `${r.title}${r.sub && !r.missing ? ` (${r.sub})` : ''}${r.tag ? ` [${r.tag}]` : ''}` }), r.note ? h('span', { class: 'print-note', text: ` — ${r.note}` }) : null))))) : h('p', { text: 'Nothing saved yet.' }),
+          m.count ? m.sections.map((s) => h('section', { class: 'print-section' }, h('h2', { text: s.label }), h('ul', {}, s.rows.map((r) => h('li', {}, r.tried === null ? null : box(r.tried), h('span', { class: 'print-name', text: `${r.title}${r.sub && !r.missing ? ` (${r.sub})` : ''}${r.tag ? ` [${r.tag}]` : ''}${r.coords ? ` @ ${r.coords}` : ''}` }), r.note ? h('span', { class: 'print-note', text: ` — ${r.note}` }) : null))))) : h('p', { text: 'Nothing saved yet.' }),
           h('p', { class: 'print-foot', text: `${GUIDE_FOOT} Printed from PackWise.` })));
     },
   };

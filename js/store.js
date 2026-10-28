@@ -512,7 +512,7 @@ export function createStore(adapter) {
     const cur = find('entries', id);
     if (!saved) {
       if (!cur) return false;
-      if (cur.kind === 'custom') { commit({ remove: { entries: [id] } }); return false; } // nothing else worth keeping
+      if (cur.kind === 'custom' || cur.kind === 'web') { commit({ remove: { entries: [id] } }); return false; } // a snapshot with nothing else worth keeping
       // keep the record only if it still carries something else the user wrote or ticked
       if (cur.tried || cur.note) commit({ put: { entries: [{ ...touch(cur), saved: false, day: null }] } });
       else commit({ remove: { entries: [id] } });
@@ -579,6 +579,17 @@ export function createStore(adapter) {
     const refId = customRef(name);
     const cur = find('entries', entryId(tripId, 'custom', refId));
     const next = normalizeEntry({ ...(cur ? touch(cur) : { tripId, kind: 'custom', refId, order: nextOrder_(tripId), createdAt: nowIso() }), tripId, kind: 'custom', refId, label: name, sub, type, note, saved: true });
+    if (!next) return null;
+    commit({ put: { entries: [next] } });
+    return next;
+  }
+
+  /** Save a place found by the online lookup. The entry keeps its own snapshot (name, description, coordinates), so it works offline and survives backup. */
+  function saveWebPlace(tripId, place) {
+    if (!find('trips', tripId) || !place) return null;
+    const refId = `w-${place.wp}`;
+    const cur = find('entries', entryId(tripId, 'web', refId));
+    const next = normalizeEntry({ ...(cur ? touch(cur) : { tripId, kind: 'web', refId, order: nextOrder_(tripId), createdAt: nowIso() }), tripId, kind: 'web', refId, label: place.name, sub: place.desc, type: place.kind, lat: place.lat, lon: place.lon, wp: place.wp, saved: true });
     if (!next) return null;
     commit({ put: { entries: [next] } });
     return next;
@@ -749,6 +760,7 @@ export function createStore(adapter) {
     applyScopeChanges,
     undoScopeChanges,
     addCustomPlace,
+    saveWebPlace,
     editCustomPlace,
     removeEntry,
     restoreEntry,

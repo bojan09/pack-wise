@@ -30,6 +30,12 @@ const MIGRATIONS = [
     to: 3,
     up: (data) => data,
   },
+  {
+    // v3 -> v4: entries may be 'web' (saved from the online lookup). Additive: nothing to rewrite.
+    from: 3,
+    to: 4,
+    up: (data) => data,
+  },
 ];
 
 /**

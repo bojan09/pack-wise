@@ -528,3 +528,75 @@
   flex: 1 1 100%;
   text-transform: capitalize;
 }
+
+/* ===================== Find places online ===================== */
+.online-consent,
+.cand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.online-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.online-row {
+  display: flex;
+  gap: 8px;
+}
+
+.online-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cand-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cand {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+}
+
+.cand:hover {
+  border-color: var(--accent-strong);
+}
+
+.cand .muted {
+  grid-column: 1;
+}
+
+.cand .chev {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.coords {
+  font-variant-numeric: tabular-nums;
+}
+
+.web-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+}
+
+.web-links .coords {
+  flex: 1 1 100%;
+}

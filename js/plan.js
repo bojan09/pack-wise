@@ -41,6 +41,10 @@ export function resolveGuide(entries, { catalog = CATALOG, food = FOOD } = {}) {
       // a place the user wrote themselves; admission is unknown (null) so it never claims to be free or ticketed
       const place = { id: entry.refId, name: entry.label, area: entry.sub || 'My own place', kind: entry.type, admission: null, setting: OUTDOOR_TYPES.includes(entry.type) ? 'outdoor' : 'both' };
       rows.push({ key: `custom:${entry.refId}`, entry, kind: 'custom', title: entry.label, sub: entry.sub || 'My own place', group: 'mine', groupLabel: 'My own places', missing: false, place });
+    } else if (entry.kind === 'web') {
+      // found by the online lookup: coordinates and the Wikipedia page come from the source; admission is unknown
+      const place = { id: entry.refId, name: entry.label, area: entry.sub || 'Found online', kind: entry.type, admission: null, setting: OUTDOOR_TYPES.includes(entry.type) ? 'outdoor' : 'both' };
+      rows.push({ key: `web:${entry.refId}`, entry, kind: 'web', title: entry.label, sub: entry.sub || 'Found online', group: 'web', groupLabel: 'Found online', missing: false, place });
     } else if (entry.kind === 'food') {
       const dish = food.items.find((i) => i.id === entry.refId);
       if (dish) rows.push({ key: `food:${entry.refId}`, entry, kind: 'food', title: dish.name, sub: FOOD_CAT[dish.category]?.label || '', group: `food-${dish.category}`, groupLabel: FOOD_CAT[dish.category]?.label || 'Food', missing: false, dish });
@@ -52,7 +56,7 @@ export function resolveGuide(entries, { catalog = CATALOG, food = FOOD } = {}) {
 
 const OUTDOOR_TYPES = ['park', 'viewpoint', 'water', 'nature', 'street', 'history'];
 const SECTION_LABEL = { free: 'Free to Explore', ticket: 'Worth the Ticket', check: 'Check Admission First', gems: 'Hidden Gems', nature: 'Nature & Outdoors' };
-export const GROUP_ORDER = ['free', 'ticket', 'check', 'gems', 'nature', 'mine', 'food-dish', 'food-street', 'food-dessert', 'food-drink', 'missing'];
+export const GROUP_ORDER = ['free', 'ticket', 'check', 'gems', 'nature', 'mine', 'web', 'food-dish', 'food-street', 'food-dessert', 'food-drink', 'missing'];
 
 const byOrder = (a, b) => a.entry.order - b.entry.order || a.entry.createdAt.localeCompare(b.entry.createdAt) || a.key.localeCompare(b.key);
 
@@ -102,7 +106,7 @@ const norm = (s) => String(s || '').toLowerCase();
  * @returns {{id:string, title:string, why:string, add:null|{name:string, category:string}, have:boolean}[]}
  */
 export function packHints(rows, items) {
-  const places = rows.filter((r) => (r.kind === 'place' || r.kind === 'custom') && !r.missing && r.place);
+  const places = rows.filter((r) => (r.kind === 'place' || r.kind === 'custom' || r.kind === 'web') && !r.missing && r.place);
   const names = (list) => list.slice(0, 3).map((r) => r.title).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
   const owned = items.map((i) => norm(i.name));
   const has = (re) => owned.some((n) => re.test(n));
@@ -117,7 +121,7 @@ export function packHints(rows, items) {
   if (water.length) defs.push({ id: 'swim', title: 'Swimwear (if you plan to swim)', why: `You saved waterfront places: ${names(water)}.`, add: { name: 'Swimwear', category: 'clothing' }, have: has(/swim|bikini|trunks|bathing/) });
   const sacred = places.filter((r) => r.place.kind === 'religious');
   if (sacred.length) defs.push({ id: 'modest', title: 'Something to cover shoulders and knees', why: `Some sacred sites ask for modest dress: ${names(sacred)}. Check each site’s rules.`, add: { name: 'Light scarf or cover-up', category: 'clothing' }, have: has(/scarf|shawl|cover|sarong/) });
-  const gated = places.filter((r) => r.kind === 'place' && r.place.admission !== 'free');
+  const gated = places.filter((r) => (r.kind === 'place' && r.place.admission !== 'free') || (r.kind === 'web' && ['museum', 'religious', 'history'].includes(r.place.kind)));
   if (gated.length) defs.push({ id: 'entry', title: `Check entry rules for ${gated.length} ${gated.length === 1 ? 'place' : 'places'}`, why: `Admission, opening times and ID or ticket rules can change: ${names(gated)}. PackWise does not list them.`, add: null, have: false });
   const outdoors = places.filter((r) => r.place.setting === 'outdoor' || (r.kind === 'place' && r.place.setting !== 'indoor'));
   if (outdoors.length >= 3) defs.push({ id: 'sun', title: 'Sun protection', why: `${outdoors.length} saved places are outdoors or partly outdoors. Check the forecast near your dates.`, add: { name: 'Sunscreen', category: 'toiletries' }, have: has(/sun ?screen|sun ?block|spf|sun hat|\bhat\b|cap\b/) });
@@ -134,7 +138,8 @@ export function guideModel(trip, rows, days) {
   const line = (r) => ({
     title: r.title,
     sub: r.sub,
-    tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : r.kind === 'custom' ? 'My place' : '',
+    tag: r.kind === 'place' && r.place ? ADMISSION_LABEL[r.place.admission] : r.kind === 'food' ? 'Food & drink' : r.kind === 'custom' ? 'My place' : r.kind === 'web' ? 'Found online' : '',
+    coords: r.kind === 'web' && r.entry.lat !== null && r.entry.lon !== null ? `${r.entry.lat.toFixed(5)}, ${r.entry.lon.toFixed(5)}` : '',
     tried: r.kind === 'food' ? Boolean(r.entry.tried) : null,
     note: (r.entry.note || '').replace(/\s*\n\s*/g, ' '),
     missing: r.missing,
@@ -147,7 +152,7 @@ export function guideModel(trip, rows, days) {
 }
 
 const ADMISSION_LABEL = { free: 'Free area', paid: 'Ticketed', check: 'Check admission' };
-const FOOT = 'Prices, opening hours and travel times are not included: check admission and hours before you go. Diet and allergen details are general: confirm ingredients with the cook.';
+const FOOT = 'Prices, opening hours and travel times are not included: check admission and hours before you go. Diet and allergen details are general: confirm ingredients with the cook. Places marked “Found online” come from Wikipedia and Wikidata and were not reviewed by PackWise.';
 
 export function guideToText(model) {
   const out = [`PackWise — ${model.title}`, model.meta, model.byDay ? 'A draft you arranged yourself: no times, routes or durations.' : ''].filter(Boolean);
@@ -156,7 +161,7 @@ export function guideToText(model) {
     out.push(s.label.toUpperCase());
     for (const r of s.rows) {
       const box = r.tried === null ? '-' : r.tried ? '[x]' : '[ ]';
-      out.push(`  ${box} ${r.title}${r.sub && !r.missing ? ` (${r.sub})` : r.missing ? ' (no longer in the guide)' : ''}${r.tag ? ` [${r.tag}]` : ''}${r.note ? ` — ${r.note}` : ''}`);
+      out.push(`  ${box} ${r.title}${r.sub && !r.missing ? ` (${r.sub})` : r.missing ? ' (no longer in the guide)' : ''}${r.tag ? ` [${r.tag}]` : ''}${r.coords ? ` @ ${r.coords}` : ''}${r.note ? ` — ${r.note}` : ''}`);
     }
     out.push('');
   }

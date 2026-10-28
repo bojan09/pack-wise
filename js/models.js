@@ -1,7 +1,7 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 3; // v2 added guide `entries`; v3 adds user-written `custom` entries (label / sub / type)
-export const APP_VERSION = '1.9.1';
+export const SCHEMA_VERSION = 4; // v2 added guide `entries`; v3 user-written `custom` entries; v4 `web` entries saved from the optional online lookup (coordinates + Wikipedia page id)
+export const APP_VERSION = '1.10.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -280,7 +280,7 @@ export function normalizeTemplate(raw) {
 }
 
 /** Guide entries: a saved place or dish (or, later, a day plan slot) belonging to one trip. */
-export const ENTRY_KINDS = ['place', 'food', 'custom'];
+export const ENTRY_KINDS = ['place', 'food', 'custom', 'web'];
 
 /** Place types a user can give their own place; kept in step with guide.js KINDS by a test. '' = other. */
 export const CUSTOM_TYPES = ['history', 'museum', 'religious', 'street', 'park', 'viewpoint', 'water', 'nature'];
@@ -299,7 +299,10 @@ const isRef = (v) => typeof v === 'string' && /^[a-z0-9][a-z0-9/_.-]{0,79}$/.tes
 
 export function normalizeEntry(raw) {
   if (!isObj(raw) || !isId(raw.tripId) || !ENTRY_KINDS.includes(raw.kind) || !isRef(raw.refId)) return null;
-  if (raw.kind === 'custom' && !cleanText(raw.label, 80)) return null; // a custom place without a name is meaningless
+  const named = raw.kind === 'custom' || raw.kind === 'web'; // entries that carry their own snapshot instead of pointing into a catalog
+  if (named && !cleanText(raw.label, 80)) return null; // a place without a name is meaningless
+  if (raw.kind === 'web' && !(Number.isInteger(raw.wp) && raw.wp > 0)) return null; // the Wikipedia page it came from
+  const coord = (v, max) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? Math.round(v * 1e6) / 1e6 : null);
   const createdAt = cleanIso(raw.createdAt) || nowIso();
   return {
     id: entryId(raw.tripId, raw.kind, raw.refId),
@@ -309,9 +312,12 @@ export function normalizeEntry(raw) {
     saved: raw.saved === true,
     tried: raw.tried === true,
     note: cleanMultiline(raw.note, 300),
-    label: raw.kind === 'custom' ? cleanText(raw.label, 80) : '',
-    sub: raw.kind === 'custom' ? cleanText(raw.sub, 60) : '',
-    type: raw.kind === 'custom' && CUSTOM_TYPES.includes(raw.type) ? raw.type : '',
+    label: named ? cleanText(raw.label, 80) : '',
+    sub: named ? cleanText(raw.sub, raw.kind === 'web' ? 120 : 60) : '',
+    type: named && CUSTOM_TYPES.includes(raw.type) ? raw.type : '',
+    lat: raw.kind === 'web' ? coord(raw.lat, 90) : null,
+    lon: raw.kind === 'web' ? coord(raw.lon, 180) : null,
+    wp: raw.kind === 'web' ? raw.wp : 0,
     day: Number.isInteger(raw.day) && raw.day >= 1 && raw.day <= 60 ? raw.day : null,
     order: Number.isFinite(raw.order) ? raw.order : 0,
     createdAt,
