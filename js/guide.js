@@ -92,7 +92,7 @@ export function matchDestination(text, catalog) {
   if (conflicts.length && !good.length) status = 'ambiguous';
   else if (good.length && (unmatched.length || lonely.length || conflicts.length)) status = 'partial';
   else if (good.length) status = 'covered';
-  else if (lonely.length) status = 'country';
+  else if (lonely.length && !unmatched.length) status = 'country'; // "Veles, North Macedonia": an uncovered town in a covered country is not a country-only trip
   return { stops, matches: good, countryOnly: lonely, unmatched, conflicts, status };
 }
 

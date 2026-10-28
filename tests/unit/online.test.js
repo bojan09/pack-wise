@@ -45,7 +45,7 @@ test('requests only go to the allowed OpenStreetMap hosts, over https, as plain 
     await assert.rejects(getJson(bad, { fetchImpl: f }), (e) => e.code === 'blocked', bad);
   }
   assert.equal(seen.length, 2, 'refused URLs never reached fetch');
-  assert.deepEqual(ONLINE_HOSTS, ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems']);
+  assert.deepEqual(ONLINE_HOSTS, ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems', 'photon.komoot.io']);
   assert.ok(OVERPASS_ENDPOINTS.every((e) => ONLINE_HOSTS.includes(new URL(e).hostname)));
 });
 
@@ -193,4 +193,62 @@ test('cache keeps the 10 newest destinations and 20 searches, recalls searches o
 test('coordsText formats and refuses junk', () => {
   assert.equal(coordsText(41.71563, 21.77561), '41.71563, 21.77561');
   assert.equal(coordsText(NaN, 1), '');
+});
+
+import { PHOTON, placeCandidate, suggestPlaces } from '../../js/online.js';
+import { normalizePlace, normalizeTrip } from '../../js/models.js';
+
+const PHOTON_BODY = { features: [
+  { geometry: { coordinates: [21.7756, 41.7156] }, properties: { osm_type: 'R', osm_id: 1234, osm_key: 'place', osm_value: 'town', type: 'city', name: 'Veles', state: 'Vardar Region', country: 'North Macedonia', countrycode: 'MK' } },
+  { geometry: { coordinates: [21.78, 41.72] }, properties: { osm_type: 'N', osm_id: 5, osm_key: 'place', osm_value: 'town', type: 'city', name: 'Veles', state: 'Vardar Region', country: 'North Macedonia', countrycode: 'MK' } },
+  { geometry: { coordinates: [25.1, 42.5] }, properties: { osm_type: 'N', osm_id: 99, osm_key: 'place', osm_value: 'village', type: 'city', name: 'Veles', county: 'X', state: 'Gabrovo', country: 'Bulgaria', countrycode: 'bg' } },
+  { geometry: { coordinates: [21.7, 41.6] }, properties: { osm_type: 'R', osm_id: 7, osm_key: 'boundary', osm_value: 'administrative', type: 'country', name: 'North Macedonia', country: 'North Macedonia', countrycode: 'MK' } },
+  { geometry: { coordinates: [21.7, 41.6] }, properties: { osm_type: 'W', osm_id: 8, osm_key: 'highway', type: 'street', name: 'Veles Street', country: 'Serbia' } },
+  { geometry: { coordinates: [999, 1] }, properties: { name: 'Off the map' } },
+  { properties: { name: 'No geometry' } },
+] };
+
+test('suggestPlaces: Photon only, from 3 letters, deduped, streets dropped, countries flagged, country code normalised', async () => {
+  const log = [];
+  const f = async (url, init) => { log.push([url, init]); return ok(PHOTON_BODY); };
+  assert.deepEqual(await suggestPlaces('Ve', { fetchImpl: f }), [], 'under 3 letters: no request at all');
+  assert.equal(log.length, 0);
+  const r = await suggestPlaces('  Vel  ', { fetchImpl: f });
+  const u = new URL(log[0][0]);
+  assert.equal(u.origin + u.pathname, PHOTON);
+  assert.deepEqual([u.searchParams.get('q'), u.searchParams.get('limit'), u.searchParams.get('lang')], ['Vel', '7', 'en']);
+  assert.equal(log[0][1].referrerPolicy, 'no-referrer');
+  assert.deepEqual(r.map((p) => [p.name, p.label, p.cc, p.osm, p.large]), [
+    ['Veles', 'Veles, Vardar Region, North Macedonia', 'MK', 'r1234', false],
+    ['Veles', 'Veles, Gabrovo, Bulgaria', 'BG', 'n99', false],
+    ['North Macedonia', 'North Macedonia', 'MK', 'r7', true],
+  ]);
+  assert.deepEqual([r[0].lat, r[0].lon, r[0].country], [41.7156, 21.7756, 'North Macedonia']);
+  await assert.rejects(suggestPlaces('Veles', { fetchImpl: async () => ok({ nope: 1 }) }), (e) => e.code === 'format');
+});
+
+test('a newer keystroke cancels the older request, reported as "cancelled", not as an error', async () => {
+  const ctl = new AbortController();
+  const slow = (_u, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' }))));
+  const p = suggestPlaces('Veles', { fetchImpl: slow, signal: ctl.signal });
+  ctl.abort();
+  await assert.rejects(p, (e) => e.code === 'cancelled');
+  const pre = new AbortController(); pre.abort();
+  await assert.rejects(suggestPlaces('Veles', { fetchImpl: async () => ok(PHOTON_BODY), signal: pre.signal }), (e) => e.code === 'cancelled');
+});
+
+test('a picked place is stored on the trip, validated, and becomes a lookup candidate', () => {
+  const place = { name: 'Veles', label: 'Veles, Vardar Region, North Macedonia', lat: 41.7156, lon: 21.7756, cc: 'MK', osm: 'r1234', large: false };
+  assert.deepEqual(normalizePlace(place), place);
+  assert.equal(normalizePlace({ ...place, lat: 200 }), null);
+  assert.equal(normalizePlace({ ...place, name: ' ' }), null);
+  assert.deepEqual([normalizePlace({ ...place, cc: 'mk1', osm: 'x9' }).cc, normalizePlace({ ...place, cc: 'mk1', osm: 'x9' }).osm], ['', '']);
+  assert.equal(normalizePlace('Veles'), null);
+  const t = normalizeTrip({ id: 't1', name: 'Veles', destination: 'Veles, North Macedonia', place });
+  assert.deepEqual(t.place, place);
+  assert.equal(normalizeTrip({ id: 't2', name: 'Old trip' }).place, null, 'older trips have none');
+  assert.deepEqual(placeCandidate(place), { id: 'r1234', label: 'Veles', description: 'Veles, Vardar Region, North Macedonia', lat: 41.7156, lon: 21.7756, large: false });
+  assert.equal(placeCandidate({ ...place, large: true }), null, 'a country cannot be searched around');
+  assert.equal(placeCandidate(null), null);
+  assert.equal(placeCandidate({ ...place, osm: '' }).id, 'p41.716,21.776');
 });

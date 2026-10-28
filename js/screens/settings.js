@@ -121,6 +121,12 @@ export function SettingsScreen(ctx) {
       h(
         'section',
         { class: 'card settings-card' },
+        h('h2', { class: 'card-title', text: 'Place suggestions' }),
+        h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', class: 'check', name: 'placeSuggest', checked: prefs.placeSuggest, onChange: (e) => { setPrefs({ placeSuggest: e.target.checked }); toast(e.target.checked ? 'Place suggestions on' : 'Place suggestions off', { timeout: 1500 }); } }), h('span', {}, h('strong', { text: 'Suggest places as I type a destination' }), h('span', { class: 'muted small', text: 'Shows matching towns and cities from OpenStreetMap. What you type in the destination field is sent to photon.komoot.io (from three letters on). Turn off to keep everything on this device; you can still type destinations yourself.' }))),
+      ),
+      h(
+        'section',
+        { class: 'card settings-card' },
         h('h2', { class: 'card-title', text: 'Haptic feedback' }),
         h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', class: 'check', name: 'haptics', checked: prefs.haptics && supported, disabled: !supported, onChange: (e) => { setPrefs({ haptics: e.target.checked }); if (e.target.checked) buzz('tick'); } }), h('span', {}, h('strong', { text: 'Vibrate when packing' }), h('span', { class: 'muted small', text: supported ? 'A light tap when you pack an item and a pattern when a trip is fully packed.' : 'Not supported by this browser or device. Nothing in PackWise depends on it.' }))),
       ),

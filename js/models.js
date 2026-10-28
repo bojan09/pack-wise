@@ -1,7 +1,8 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 5; // v2 guide `entries`; v3 user-written `custom` entries; v4 `web` entries from the online lookup; v5 web entries come from OpenStreetMap (osm id, fee, hours, wheelchair, website); v4 Wikipedia ones stay valid
-export const APP_VERSION = '1.11.0';
+export const SCHEMA_VERSION = 6; // v6: trips may carry `place` (the destination picked from autocomplete: name, coordinates, country)
+// earlier: v2 guide `entries`; v3 user-written `custom` entries; v4 `web` entries from the online lookup; v5 web entries come from OpenStreetMap (osm id, fee, hours, wheelchair, website); v4 Wikipedia ones stay valid
+export const APP_VERSION = '1.12.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -172,6 +173,24 @@ export function normalizeConditions(v) {
   return CONDITION_IDS.filter((id) => v.includes(id)); // canonical order, deduplicated, unknown dropped
 }
 
+/** The destination as picked from autocomplete, or null. Coordinates and country come from OpenStreetMap (Photon). */
+export function normalizePlace(p) {
+  if (!isObj(p)) return null;
+  const name = cleanText(p.name, 80);
+  const lat = typeof p.lat === 'number' && Number.isFinite(p.lat) && Math.abs(p.lat) <= 90 ? Math.round(p.lat * 1e6) / 1e6 : null;
+  const lon = typeof p.lon === 'number' && Number.isFinite(p.lon) && Math.abs(p.lon) <= 180 ? Math.round(p.lon * 1e6) / 1e6 : null;
+  if (!name || lat === null || lon === null) return null;
+  return {
+    name,
+    label: cleanText(p.label, 120) || name,
+    lat,
+    lon,
+    cc: typeof p.cc === 'string' && /^[A-Z]{2}$/.test(p.cc) ? p.cc : '',
+    osm: typeof p.osm === 'string' && /^[nwr]\d{1,12}$/.test(p.osm) ? p.osm : '',
+    large: p.large === true, // a country or region: no single point to search around
+  };
+}
+
 export function normalizeTrip(raw) {
   if (!isObj(raw) || !isId(raw.id)) return null;
   const destination = cleanText(raw.destination, LIMITS.destination);
@@ -189,7 +208,8 @@ export function normalizeTrip(raw) {
     startDate,
     endDate,
     transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
-    scope: enumOr(raw.scope, SCOPE_IDS, ''), // '' = not chosen (older trips): treated like abroad
+    scope: enumOr(raw.scope, SCOPE_IDS, ''),
+    place: normalizePlace(raw.place), // '' = not chosen (older trips): treated like abroad
     travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
     season: enumOr(raw.season, SEASON_IDS, ''),
     conditions: normalizeConditions(raw.conditions ?? LEGACY_CLIMATE[raw.climate]),

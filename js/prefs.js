@@ -31,17 +31,14 @@ export const DARK_BACKGROUNDS = [
   { id: 'espresso', label: 'Espresso', swatch: '#1a1410' },
 ];
 
-/** Countries the destination guide covers; a test keeps this in step with the catalog. */
-export const HOME_COUNTRIES = [
-  { id: 'RS', label: 'Serbia' },
-  { id: 'MK', label: 'North Macedonia' },
-  { id: 'BA', label: 'Bosnia and Herzegovina' },
-  { id: 'HR', label: 'Croatia' },
-  { id: 'SI', label: 'Slovenia' },
-  { id: 'ME', label: 'Montenegro' },
-  { id: 'AL', label: 'Albania' },
-  { id: 'BG', label: 'Bulgaria' },
-];
+/** ISO 3166-1 alpha-2 codes (plus XK, Kosovo). Names come from the browser's own Intl data, so nothing is translated by hand. */
+const COUNTRY_CODES = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW'.split(' ');
+const regionName = (() => {
+  try { const d = new Intl.DisplayNames(['en'], { type: 'region' }); return (c) => d.of(c) || c; } catch { return (c) => c; }
+})();
+/** Every country, for "home country" (used to tell trips at home from trips abroad). */
+export const HOME_COUNTRIES = COUNTRY_CODES.map((id) => ({ id, label: regionName(id) })).sort((a, b) => a.label.localeCompare(b.label));
+export const countryName = (code) => (COUNTRY_CODES.includes(code) ? regionName(code) : '');
 
 export const BACKGROUNDS = [
   { id: 'default', label: 'Default' },
@@ -51,7 +48,7 @@ export const BACKGROUNDS = [
   { id: 'minimal', label: 'Minimal' },
 ];
 
-const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [], background: 'default', bgLight: 'default', bgDark: 'default', homeCountry: '', haptics: false };
+const DEFAULTS = { theme: 'system', accent: 'teal', name: '', onboarded: false, lastTripId: '', companion: true, motion: 'standard', dismissed: [], background: 'default', bgLight: 'default', bgDark: 'default', homeCountry: '', placeSuggest: true, haptics: false };
 export const MOTION_LEVELS = [
   { id: 'reduced', label: 'Reduced' },
   { id: 'standard', label: 'Standard' },
@@ -83,6 +80,7 @@ function sanitize(p) {
   if (typeof p?.lastTripId === 'string') out.lastTripId = p.lastTripId.slice(0, 64);
   out.companion = p?.companion !== false;
   out.haptics = p?.haptics === true;
+  out.placeSuggest = p?.placeSuggest !== false; // destination autocomplete is on unless turned off
   if (BACKGROUNDS.some((b) => b.id === p?.background)) out.background = p.background;
   if (HOME_COUNTRIES.some((c) => c.id === p?.homeCountry)) out.homeCountry = p.homeCountry;
   if (LIGHT_BACKGROUNDS.some((b) => b.id === p?.bgLight)) out.bgLight = p.bgLight;

@@ -1,12 +1,15 @@
 // Live smoke test for the optional online lookup (js/online.js, OpenStreetMap). Run it once with real network access:
 //   node scripts/check-online.mjs [place name]
-// The app's own tests use a fake server, so this is the only check that the real Nominatim / Overpass responses still
-// have the shape the code expects. It prints what it found and exits non-zero on any mismatch.
-import { findPlaces, nearby } from '../js/online.js';
+// The app's own tests use a fake server, so this is the only check that the real Photon (autocomplete), Nominatim and
+// Overpass responses still have the shape the code expects. It prints what it found and exits non-zero on any mismatch.
+import { findPlaces, nearby, suggestPlaces } from '../js/online.js';
 
 const name = process.argv[2] || 'Veles';
 const fail = (msg) => { console.error(`FAIL ${msg}`); process.exitCode = 1; };
 try {
+  const sug = await suggestPlaces(name);
+  console.log(`autocomplete for "${name}":`, sug.map((s) => `${s.osm} ${s.label} [${s.cc}]`));
+  if (!sug.length) fail('Photon returned no suggestions');
   const found = await findPlaces(name);
   console.log(`candidates for "${name}":`, found.map((f) => `${f.id} ${f.label} (${f.description})${f.large ? ' [region]' : ''}`));
   const first = found.find((f) => !f.large);

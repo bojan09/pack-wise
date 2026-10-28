@@ -42,6 +42,12 @@ const MIGRATIONS = [
     to: 5,
     up: (data) => data,
   },
+  {
+    // v5 -> v6: trips may carry `place` (picked from destination autocomplete). Additive.
+    from: 5,
+    to: 6,
+    up: (data) => data,
+  },
 ];
 
 /**

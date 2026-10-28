@@ -1245,3 +1245,43 @@ input[aria-invalid='true'] {
   border-color: var(--cat-strong);
   color: #fff;
 }
+
+/* destination autocomplete (js/ui/placefield.js) */
+.place-field {
+  position: relative;
+}
+
+.place-field input {
+  width: 100%;
+}
+
+.place-suggest {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 290px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.place-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.place-option:hover,
+.place-option[aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}

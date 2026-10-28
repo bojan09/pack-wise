@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.11.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.12.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -30,6 +30,8 @@ const results = [];
 async function test(name, fn, { sw = false, viewport = { width: 390, height: 844 }, ctxOptions = {}, ignoreConsole = null } = {}) {
   if (process.env.E2E_GREP && !new RegExp(process.env.E2E_GREP, 'i').test(name)) return; // dev filter: E2E_GREP="haptics|print"
   const ctx = await browser.newContext({ viewport, serviceWorkers: sw ? 'allow' : 'block', acceptDownloads: true, ...ctxOptions });
+  // destination autocomplete talks to Photon while typing; by default every test gets an empty answer (tests that need suggestions route it themselves)
+  await ctx.route(/^https:\/\/photon\.komoot\.io\//, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"features":[]}' }));
   const page = await ctx.newPage();
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
@@ -1378,11 +1380,17 @@ await test('privacy audit: only same-origin GETs, no storage of trip data outsid
   const id = await firstTrip(page);
   await page.evaluate(() => { const { store } = window.__packwise; store.loadDemo(); store.saveTripAsTemplate(store.state.trips[0].id, 'Secret template'); });
   for (const r of ['/', '/trips', `/trip/${id}`, `/trip/${id}/studio`, `/trip/${id}/tasks`, '/templates', '/settings?tab=about']) { await page.goto(`${BASE}#${r}`); await page.waitForTimeout(80); }
-  const foreign = requests.filter((r) => !r.url.startsWith(BASE) && !r.url.startsWith('data:') && !r.url.startsWith('blob:'));
-  assert.deepEqual(foreign, [], 'no third-party requests');
+  // the only request that leaves the device is destination autocomplete (on by default, documented, can be turned off): it carries the typed text only
+  const suggest = requests.filter((r) => r.url.startsWith('https://photon.komoot.io/api/'));
+  assert.ok(suggest.length > 0, 'typing a destination asked for suggestions');
+  assert.ok(suggest.every((r) => r.method === 'GET' && [...new URL(r.url).searchParams.keys()].sort().join() === 'lang,limit,q'), 'only the typed text, a limit and a language');
+  assert.ok(suggest.every((r) => /^S|^Se/i.test(new URL(r.url).searchParams.get('q')) || 'Secretville'.toLowerCase().startsWith(new URL(r.url).searchParams.get('q').toLowerCase())), 'and that text is only what was typed into the destination field');
+  const foreign = requests.filter((r) => !r.url.startsWith(BASE) && !r.url.startsWith('data:') && !r.url.startsWith('blob:') && !suggest.includes(r));
+  assert.deepEqual(foreign, [], 'no other third-party requests');
   assert.deepEqual(requests.filter((r) => r.method !== 'GET'), [], 'no uploads of any kind');
   assert.equal(sockets, 0);
-  assert.ok(requests.every((r) => !/secret/i.test(r.url)), 'trip names never appear in URLs sent to the network');
+  assert.ok(requests.filter((r) => !suggest.includes(r)).every((r) => !/secret/i.test(r.url)), 'trip names never appear in any other URL');
+  assert.ok(suggest.every((r) => !/template/i.test(r.url)), 'templates, notes and other trip data are never sent');
   const ls = await page.evaluate(() => JSON.stringify(Object.entries(localStorage)));
   assert.ok(!/secretville|template/i.test(ls), 'localStorage holds preferences only');
   assert.deepEqual(await ctx.cookies(), []);
@@ -1875,7 +1883,7 @@ await test('explore: saved places survive backup/restore and trip duplication; d
   await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
-  assert.equal(file.schemaVersion, 5);
+  assert.equal(file.schemaVersion, 6);
   assert.equal(file.data.entries.length, 2);
   await page.click('button:has-text("Clear data")');
   await page.click('dialog button:has-text("Delete everything")');
@@ -1908,7 +1916,7 @@ await test('explore: an existing v1 database upgrades to v2 without losing trips
   assert.deepEqual(after.entries, []);
   assert.equal(await page.locator('.banner-error').count(), 0);
   const raw = await idbSnapshotRaw(page);
-  assert.equal(raw.version, 5);
+  assert.equal(raw.version, 6);
   await page.goto(explorePath(after.trips[0].id));
   await page.waitForSelector('.place-card');
   await page.click('.save-btn >> nth=0');
@@ -1931,7 +1939,7 @@ await test('upgrade: a v2 database (saved places, no own places) upgrades to the
   assert.deepEqual(after.trips, before.trips);
   assert.deepEqual(after.entries, before.entries);
   assert.equal(await page.locator('.banner-error').count(), 0);
-  assert.equal((await idbSnapshotRaw(page)).version, 5);
+  assert.equal((await idbSnapshotRaw(page)).version, 6);
   await page.goto(guidePath(id));
   await page.waitForSelector('.guide-row');
   await page.click('button:has-text("Add your own place")');
@@ -2075,7 +2083,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.11.0']);
+  assert.deepEqual(keys, ['packwise-v1.12.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2115,7 +2123,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.11.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.12.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -3242,6 +3250,131 @@ await test('online: a v4 entry saved from the earlier Wikipedia version still di
   assert.equal(await page.locator('.guide-row a[href*="curid=11"]').count(), 1);
 });
 
+// ============================================================ Destination autocomplete (Photon), mocked
+const PHOTON_FEATURES = [
+  { geometry: { coordinates: [21.7756, 41.7156] }, properties: { osm_type: 'R', osm_id: 1234, osm_key: 'place', osm_value: 'town', type: 'city', name: 'Veles', state: 'Vardar Region', country: 'North Macedonia', countrycode: 'MK' } },
+  { geometry: { coordinates: [25.1, 42.5] }, properties: { osm_type: 'N', osm_id: 99, osm_key: 'place', osm_value: 'village', type: 'city', name: 'Veles', state: 'Gabrovo', country: 'Bulgaria', countrycode: 'BG' } },
+  { geometry: { coordinates: [12.3, 41.9] }, properties: { osm_type: 'R', osm_id: 41485, osm_key: 'place', osm_value: 'city', type: 'city', name: 'Rome', state: 'Lazio', country: 'Italy', countrycode: 'IT' } },
+];
+async function mockPhoton(page, state = {}) {
+  const log = [];
+  await page.route(/^https:\/\/photon\.komoot\.io\//, async (route) => {
+    const q = new URL(route.request().url()).searchParams.get('q') || '';
+    log.push(q);
+    if (state.fail) return route.abort('failed');
+    const features = PHOTON_FEATURES.filter((f) => f.properties.name.toLowerCase().startsWith(q.toLowerCase().slice(0, 3)));
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ features }) });
+  });
+  return log;
+}
+
+await test('autocomplete: real places appear as you type; keyboard picks one; the trip stores where it is and the scope follows the home country', async ({ page }) => {
+  await skipWelcome(page);
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.selectOption('select[name=homeCountry]', 'MK');
+  const log = await mockPhoton(page);
+  await page.goto(`${BASE}#/trips/new`);
+  const dest = page.locator('input[name=destination]');
+  assert.deepEqual(await dest.evaluate((el) => [el.getAttribute('role'), el.getAttribute('aria-autocomplete'), el.getAttribute('aria-expanded'), !!document.getElementById(el.getAttribute('aria-controls'))]), ['combobox', 'list', 'false', true]);
+  assert.match(await page.locator('.trip-form').innerText(), /what you type here is sent there/);
+  await dest.pressSequentially('Ve', { delay: 30 });
+  await page.waitForTimeout(600);
+  assert.deepEqual(log, [], 'two letters: nothing is sent');
+  await dest.pressSequentially('l', { delay: 30 });
+  await page.waitForSelector('.place-option');
+  assert.deepEqual(log, ['Vel'], 'one request after the pause, not one per key');
+  assert.equal(await dest.getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(await page.locator('.place-option').allInnerTexts().then((a) => a.map((t) => t.replace(/\s+/g, ' ').trim())), ['Veles Vardar Region, North Macedonia', 'Veles Gabrovo, Bulgaria']);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await dest.getAttribute('aria-activedescendant'), await page.locator('.place-option').first().getAttribute('id'));
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.place-suggest', { state: 'hidden' });
+  assert.equal(await dest.inputValue(), 'Veles, North Macedonia');
+  assert.equal(await page.evaluate(() => document.querySelector('input[name=scope]:checked')?.value), 'domestic', 'picked place is in the home country');
+  assert.match(await page.locator('.trip-form').innerText(), /Set from the place you picked and your home country \(North Macedonia\)/);
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Veles")');
+  const trip = (await tripState(page)).trips[0];
+  assert.deepEqual(trip.place, { name: 'Veles', label: 'Veles, Vardar Region, North Macedonia', lat: 41.7156, lon: 21.7756, cc: 'MK', osm: 'r1234', large: false });
+  assert.equal(trip.scope, 'domestic');
+  assert.ok(!(await tripState(page)).tasks.some((t) => t.title === 'Buy travel insurance'));
+  // a place abroad, picked with the mouse
+  await page.goto(`${BASE}#/trips/new`);
+  await page.locator('input[name=destination]').pressSequentially('Rom', { delay: 30 });
+  await page.click('.place-option:has-text("Rome")');
+  assert.equal(await page.evaluate(() => document.querySelector('input[name=scope]:checked')?.value), 'abroad');
+  // editing the text by hand drops the picked place (no stale coordinates)
+  await page.locator('input[name=destination]').press('End');
+  await page.locator('input[name=destination]').pressSequentially(' and Naples', { delay: 10 });
+  await page.click('button:has-text("Generate Packing List")');
+  await page.waitForSelector('h1:has-text("Rome, Italy and Naples")');
+  assert.equal((await tripState(page)).trips.find((t) => t.destination === 'Rome, Italy and Naples').place, null);
+  // the edit form keeps the place when the text is untouched, and drops it when the destination is rewritten
+  await page.goto(`${BASE}#/trip/${trip.id}/edit`);
+  await page.waitForSelector('input[name=destination]');
+  await page.click('button:has-text("Save changes")');
+  await page.waitForSelector('h1:has-text("Veles")');
+  assert.equal((await tripState(page)).trips.find((t) => t.id === trip.id).place?.osm, 'r1234');
+  await page.goto(`${BASE}#/trip/${trip.id}/edit`);
+  await page.fill('input[name=destination]', 'Ohrid');
+  await page.click('button:has-text("Save changes")');
+  await page.waitForSelector('h1');
+  await page.waitForTimeout(200);
+  assert.equal((await tripState(page)).trips.find((t) => t.id === trip.id).place, null, 'no stale coordinates for a different destination');
+});
+
+await test('autocomplete: off switch sends nothing; offline stays quiet; typing by hand always works', async ({ page }) => {
+  await skipWelcome(page);
+  const state = {};
+  const log = await mockPhoton(page, state);
+  // offline: no list, a status for screen readers, the form still works
+  state.fail = true;
+  await page.goto(`${BASE}#/trips/new`);
+  await page.locator('input[name=destination]').pressSequentially('Veles', { delay: 20 });
+  await page.waitForFunction(() => /need a connection/.test(document.querySelector('.place-field [role=status]')?.textContent || ''));
+  assert.equal(await page.locator('.place-option').count(), 0);
+  await generate(page);
+  await page.waitForSelector('h1:has-text("Veles")');
+  assert.equal((await tripState(page)).trips[0].place, null);
+  // switched off: not a single request
+  state.fail = false;
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.waitForSelector('input[name=placeSuggest]');
+  assert.equal(await page.locator('input[name=placeSuggest]').isChecked(), true, 'on by default');
+  await page.click('input[name=placeSuggest]');
+  const before = log.length;
+  await page.goto(`${BASE}#/trips/new`);
+  assert.match(await page.locator('.trip-form').innerText(), /Place suggestions are off/);
+  await page.locator('input[name=destination]').pressSequentially('Velesta', { delay: 20 });
+  await page.waitForTimeout(700);
+  assert.equal(log.length, before, 'no request while switched off');
+  assert.equal(await page.locator('.place-option').count(), 0);
+}, { ignoreConsole: /Failed to load resource/ });
+
+await test('autocomplete: a picked place lets Explore search around it without another name search', async ({ page }) => {
+  await skipWelcome(page);
+  await mockPhoton(page);
+  const osm = await mockWeb(page);
+  await page.goto(`${BASE}#/trips/new`);
+  await page.locator('input[name=destination]').pressSequentially('Vel', { delay: 30 });
+  await page.click('.place-option:has-text("North Macedonia")');
+  await generate(page);
+  await page.waitForSelector('h1:has-text("Veles")');
+  const id = await firstTrip(page);
+  await page.goto(explorePath(id));
+  await page.waitForSelector('.own-places'); // Veles is not in the built-in guide: plan-it-yourself, not "pick a city"
+  await page.click('a:has-text("Find places online")');
+  await page.waitForSelector('.known-place');
+  assert.match(await page.locator('.known-place').innerText(), /Places around Veles[\s\S]*41\.71560, 21\.77560/);
+  assert.deepEqual(osm, [], 'still nothing sent before a tap');
+  await page.click('button:has-text("Find places here")');
+  await page.waitForSelector('.web-card');
+  assert.deepEqual([...new Set(osm.map((r) => r.host))], ['overpass-api.de'], 'no second name search: straight to places');
+  // the food guide also knows the country from the picked place
+  await page.goto(`${BASE}#/trip/${id}/taste`);
+  await page.waitForSelector('.food-card');
+});
+
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   const listed = new Set([...sw.matchAll(/^\s+'([^']+)',$/gm)].map((m) => m[1]));
@@ -3262,7 +3395,7 @@ await test('no innerHTML / eval / external URLs in app code', async () => {
     if (/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(/.test(src)) offenders.push(`${f}: unsafe API`);
     const urls = [...src.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
     // guide.js builds user-opened outbound search links (never fetched); CSP still blocks any fetch to them
-    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : f.endsWith('js/online.js') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|www\.openstreetmap\.org)(\/|$)/ : f.endsWith('index.html') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems);?$/ : null; // the only network module: two fixed hosts
+    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : f.endsWith('js/online.js') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io|www\.openstreetmap\.org)(\/|$)/ : f.endsWith('index.html') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io);?$/ : null; // the only network module: two fixed hosts
     if (allowed) urls.splice(0, urls.length, ...urls.filter((u) => !allowed.test(u)));
     if (urls.length) offenders.push(`${f}: external URL ${urls[0]}`);
   }

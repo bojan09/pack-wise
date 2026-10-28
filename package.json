@@ -1,6 +1,6 @@
 {
   "name": "packwise",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "PackWise — Smart Packing Companion. Offline-first vanilla PWA.",
   "private": true,
   "type": "module",

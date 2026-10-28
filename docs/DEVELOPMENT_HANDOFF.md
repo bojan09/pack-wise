@@ -54,6 +54,17 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## v1.12.0: destination autocomplete (schema v6)
+
+- `js/online.js`: `PHOTON` + `suggestPlaces(q, {signal})` (GET `q`, `limit=7`, `lang=en`; `[]` under 3 chars; drops street/house and highway/building features; dedupes by label; max 6 → `{name,label,country,lat,lon,cc,osm,large}`). `getJson` takes an external `signal`; aborting it throws code `cancelled`. `placeCandidate(place)` turns a stored place into a lookup candidate. `ONLINE_HOSTS` gains `photon.komoot.io` (CSP in `index.html` and `_headers` too).
+- `js/ui/placefield.js`: ARIA 1.2 combobox over the destination input (listbox, `aria-activedescendant`, arrows / Enter / Escape, mouse), 350 ms debounce, AbortController for stale requests, polite status line, `online.js` imported lazily. `picked` = the text the stored place belongs to; editing it calls `onClear`.
+- `tripForm.js`: `form.place` saved with the trip; `scopeFromPlace` sets within/abroad from `place.cc` vs home country (or a tip to set one); `autoScope` (catalog-based) skips when a place is known. Notice text under the field depends on the preference.
+- Prefs: `placeSuggest` (default **true**, user decision), Settings → Preferences card. `HOME_COUNTRIES` now covers all ISO countries via `Intl.DisplayNames`.
+- **Schema v6**: `trip.place` (`normalizePlace`: name ≤80, label ≤120, finite lat/lon in range, `cc` /^[A-Z]{2}$/, `osm` /^[nwr]\d+$/, else `null`). Migration 5→6 is a no-op (missing = null).
+- Consumers: Online screen shows "Places around <label>" with *Find places here* (Overpass only); Taste includes `place.cc` when it is a covered country; `matchDestination` no longer treats "Veles, North Macedonia" as country-only.
+- Tests: unit (suggest parsing, cancel, normalizePlace, placeCandidate, matcher); e2e `autocomplete:` (debounce/min length, keyboard + mouse pick, stored place, scope, edit drops stale place, off switch = zero requests, offline quiet, Explore uses stored coordinates); privacy audit allows Photon GETs with only q/limit/lang. The e2e harness mocks Photon with an empty answer by default.
+- Not verified live (no network in the sandbox): run `npm run check:online` once.
+
 ## v1.11.0: online lookup now uses OpenStreetMap (schema v5)
 
 - v1.10.0 used Wikidata + Wikipedia; v1.11.0 replaced it with **OpenStreetMap** (Nominatim for the town, Overpass for places) because it is a real map database with coordinates and fee / opening-hours tags. No API key; no AI model is a source of facts.

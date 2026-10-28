@@ -102,7 +102,7 @@ export function TasteScreen(ctx) {
       const override = COUNTRY[manual] || null;
       const codes = override
         ? [override.id]
-        : match.status === 'ambiguous' ? [] : [...new Set([...match.matches.map((d) => d.countryCode), ...match.countryOnly.map((c) => c.id)])];
+        : match.status === 'ambiguous' ? [] : [...new Set([...match.matches.map((d) => d.countryCode), ...match.countryOnly.map((c) => c.id), ...(COUNTRY[trip.place?.cc] ? [trip.place.cc] : [])])]; // a place picked from autocomplete knows its country
       const places = override ? [override.name] : [...new Set([...match.matches.map((d) => d.name), ...match.countryOnly.map((c) => c.name)])];
       const items = foodForCountries(codes);
       const entries = new Map(tripEntries(state, tripId, 'food').map((e) => [e.refId, e]));

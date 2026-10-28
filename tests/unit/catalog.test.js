@@ -168,3 +168,10 @@ test('links are encoded searches (no fabricated coordinates or routes) and refs 
   assert.equal(getPlace(CATALOG, 'belgrade/nope'), null);
   assert.equal(getPlace(CATALOG, 'nowhere/x'), null);
 });
+
+test('an uncovered town in a covered country is not treated as a country-only trip', () => {
+  const r = matchDestination('Veles, North Macedonia', CATALOG);
+  assert.equal(r.status, 'none');
+  assert.deepEqual(r.unmatched, ['veles']);
+  assert.equal(matchDestination('North Macedonia', CATALOG).status, 'country');
+});

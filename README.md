@@ -77,6 +77,10 @@ Mobile now has a **More** tab with everything the desktop sidebar has (Studio, E
 
 Any town or city can be looked up: **Explore → Find places online** searches OpenStreetMap (no API key) for attractions within 6 km, lists them by type with exact coordinates and map links, shows entry fee, opening hours and wheelchair access where mappers tagged them (labelled as community data), and lets you save them into My Guide. It is opt-in (nothing is sent until you tap *Search online*, and only the place name, then its coordinates), results are cached for offline use, and ticket prices are never shown. See `docs/DESTINATION_DATA.md`.
 
+## v1.12.0: destination autocomplete
+
+The Destination field suggests real places as you type (OpenStreetMap via Photon, no API key): pick one and the trip remembers where it is (name, region, country, coordinates), the *within my country / abroad* choice is set from your home country, and *Find places online* can search around it straight away. On by default with a notice under the field; turn it off in Settings → Preferences and nothing is sent while typing. Typing a destination by hand always works.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.

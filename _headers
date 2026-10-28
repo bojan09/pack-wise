@@ -3,7 +3,7 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self' https://nominatim.openstreetmap.org https://overpass-api.de https://overpass.kumi.systems; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self' https://nominatim.openstreetmap.org https://overpass-api.de https://overpass.kumi.systems https://photon.komoot.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /sw.js
   Cache-Control: no-cache
 /index.html

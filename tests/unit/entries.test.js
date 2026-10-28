@@ -12,10 +12,10 @@ const fresh = async (opts) => { const a = createMemoryAdapter(opts); const s = c
 const mk = (s, name = 'Belgrade') => s.createTrip({ name, destination: name, type: 'city' }, { bagKinds: ['carry-on'] });
 
 test('schema is v2 and v1 data migrates with empty entries', () => {
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 6);
   const r = migrate({ trips: [] }, 1);
-  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 5, true, []]);
-  assert.deepEqual([migrate({ trips: [], entries: [] }, 2).from, migrate({ trips: [], entries: [] }, 2).to], [2, 5]);
+  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 6, true, []]);
+  assert.deepEqual([migrate({ trips: [], entries: [] }, 2).from, migrate({ trips: [], entries: [] }, 2).to], [2, 6]);
   assert.deepEqual(migrate({ trips: [], entries: [{ id: 'x' }] }, 1).data.entries, [{ id: 'x' }]); // never drops existing
 });
 
@@ -182,8 +182,13 @@ test('scope is stored on the trip, validated, drives generation, and survives ba
   assert.equal(parseBackup(JSON.stringify(store.exportData())).data.trips.find((t) => t.id === home.id).scope, 'domestic');
 });
 
-test('home-country choices match the destination catalog', () => {
-  assert.deepEqual(HOME_COUNTRIES.map((c) => [c.id, c.label]), CATALOG.countries.map((c) => [c.id, c.name]));
+test('home-country choices cover every country, including all the guide covers', () => {
+  const ids = HOME_COUNTRIES.map((c) => c.id);
+  assert.ok(ids.length >= 249);
+  for (const c of CATALOG.countries) assert.ok(ids.includes(c.id), c.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(HOME_COUNTRIES.find((c) => c.id === 'MK').label, 'North Macedonia');
+  assert.ok(HOME_COUNTRIES.every((c, i, a) => i === 0 || a[i - 1].label.localeCompare(c.label) <= 0), 'sorted by name');
 });
 
 import { planScopeChange } from '../../js/templates.js';

@@ -12,7 +12,8 @@
 
 export const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 export const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-export const ONLINE_HOSTS = ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems'];
+export const PHOTON = 'https://photon.komoot.io/api/';
+export const ONLINE_HOSTS = ['nominatim.openstreetmap.org', 'overpass-api.de', 'overpass.kumi.systems', 'photon.komoot.io'];
 /** Plain pages for the attribution line (opened by the user, never fetched). */
 export const SOURCE_PAGES = { osm: 'https://www.openstreetmap.org/', copyright: 'https://www.openstreetmap.org/copyright' };
 export const TIMEOUT_MS = 20000;
@@ -22,7 +23,7 @@ const CACHE_MAX = 10; // destinations kept for offline use
 const MAX_PLACES = 60;
 
 export class OnlineError extends Error {
-  /** @param {'offline'|'timeout'|'http'|'format'|'blocked'|'input'} code */
+  /** @param {'offline'|'timeout'|'http'|'format'|'blocked'|'input'|'cancelled'} code */
   constructor(code, message) {
     super(message);
     this.code = code;
@@ -36,6 +37,7 @@ const FRIENDLY = {
   format: 'The map service sent something unexpected, so nothing was shown. Try again later.',
   blocked: 'That address is not allowed.',
   input: 'Type a place name of at least two letters.',
+  cancelled: '',
 };
 export const friendlyError = (e) => FRIENDLY[e?.code] || FRIENDLY.http;
 
@@ -50,15 +52,18 @@ export function withParams(base, params) {
  * GET JSON from an allowed host only, with a timeout and no cookies. Nominatim's usage policy asks for an
  * identifying referrer, so it gets the site origin only; Overpass gets none.
  */
-export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS, signal } = {}) {
   let host = '';
   try {
     const u = new URL(url);
     host = u.protocol === 'https:' ? u.hostname : '';
   } catch { host = ''; }
   if (!ONLINE_HOSTS.includes(host)) throw new OnlineError('blocked', FRIENDLY.blocked);
+  if (signal?.aborted) throw new OnlineError('cancelled', '');
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+  const onCancel = () => ctl?.abort('cancelled');
+  signal?.addEventListener?.('abort', onCancel);
   try {
     const res = await fetchImpl(url, { method: 'GET', credentials: 'omit', referrerPolicy: host === 'nominatim.openstreetmap.org' ? 'origin' : 'no-referrer', redirect: 'error', signal: ctl?.signal, headers: { accept: 'application/json' } });
     if (!res.ok) throw new OnlineError('http', FRIENDLY.http);
@@ -68,16 +73,54 @@ export async function getJson(url, { fetchImpl = globalThis.fetch, timeoutMs = T
     return body;
   } catch (e) {
     if (e instanceof OnlineError) throw e;
+    if (signal?.aborted) throw new OnlineError('cancelled', ''); // the caller moved on (e.g. the user kept typing)
     if (e?.name === 'AbortError') throw new OnlineError('timeout', FRIENDLY.timeout);
     throw new OnlineError('offline', FRIENDLY.offline); // fetch rejects with a TypeError when there is no connection
   } finally {
     if (timer) clearTimeout(timer);
+    signal?.removeEventListener?.('abort', onCancel);
   }
 }
 
 const cleanQuery = (q) => String(q ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 const str = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n) : '');
 const inRange = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+
+// ------------------------------------------------------------- autocomplete
+const LARGE_TYPES = new Set(['country', 'state', 'region', 'county', 'continent']);
+const SKIP_TYPES = new Set(['house', 'street']);
+
+/**
+ * Type-ahead suggestions for the destination field (Photon, an OpenStreetMap search built for autocomplete;
+ * Nominatim's policy forbids autocomplete). Called by the form only when suggestions are on, from 3 letters,
+ * after a short pause; earlier requests are cancelled through `signal`.
+ * @returns {Promise<{name: string, label: string, lat: number, lon: number, cc: string, osm: string, large: boolean}[]>}
+ */
+export async function suggestPlaces(query, opts = {}) {
+  const q = cleanQuery(query);
+  if (q.length < 3) return [];
+  const body = await getJson(withParams(PHOTON, { q, limit: 7, lang: 'en' }), opts);
+  if (!Array.isArray(body.features)) throw new OnlineError('format', FRIENDLY.format);
+  const out = [];
+  const seen = new Set();
+  for (const f of body.features) {
+    const p = f?.properties || {};
+    const [lon, lat] = Array.isArray(f?.geometry?.coordinates) ? f.geometry.coordinates.map(Number) : [];
+    const name = str(p.name, 80);
+    if (!name || !inRange(lat, lon) || SKIP_TYPES.has(p.type) || ['highway', 'building'].includes(p.osm_key)) continue;
+    const cc = typeof p.countrycode === 'string' && /^[A-Za-z]{2}$/.test(p.countrycode) ? p.countrycode.toUpperCase() : '';
+    const where = [p.city !== name ? p.city : '', p.state !== name ? p.state : '', p.country !== name ? p.country : ''].map((x) => str(x, 40)).filter(Boolean);
+    const label = str([name, ...[...new Set(where)]].join(', '), 120);
+    if (seen.has(label.toLowerCase())) continue; // the same town as a node and as a boundary
+    seen.add(label.toLowerCase());
+    const t = String(p.osm_type || '').toLowerCase();
+    out.push({ name, label, country: str(p.country, 60), lat, lon, cc, osm: ['n', 'w', 'r'].includes(t) && Number.isInteger(p.osm_id) ? `${t}${p.osm_id}` : '', large: LARGE_TYPES.has(p.type) || p.osm_value === 'country' });
+  }
+  return out.slice(0, 6);
+}
+
+/** A trip's stored place as a lookup candidate (so Explore can search around it without another name search). */
+export const placeCandidate = (place) => (place && !place.large ? { id: place.osm || `p${place.lat.toFixed(3)},${place.lon.toFixed(3)}`, label: place.name, description: place.label, lat: place.lat, lon: place.lon, large: false } : null);
 
 // ------------------------------------------------------------------- search
 /**

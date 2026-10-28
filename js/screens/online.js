@@ -7,7 +7,7 @@ import { button, chip, emptyState, iconButton } from '../ui/components.js';
 import { companionBubble } from '../ui/bubble.js';
 import { toast } from '../ui/toast.js';
 import { KINDS, googleCoordUrl, osmCoordUrl, osmObjectUrl } from '../guide.js';
-import { SOURCE_PAGES, coordsText, findPlaces, friendlyError, lookup, recallCandidates, rememberCandidates } from '../online.js';
+import { SOURCE_PAGES, placeCandidate, coordsText, findPlaces, friendlyError, lookup, recallCandidates, rememberCandidates } from '../online.js';
 import { getTrip, tripEntries } from '../selectors.js';
 import { plural } from '../format.js';
 import { guideTabs, pageHeader, tripSubtitle } from './shared.js';
@@ -24,7 +24,8 @@ export function OnlineScreen(ctx) {
   const trip0 = getTrip(store.state, tripId);
   const asked = (trip0.destination || trip0.name).trim();
   const stops = [...new Set(asked.split(STOP_SPLIT).map((s) => s.trim()).filter((s) => s.length > 1))].slice(0, 4);
-  let query = (qs.get('q') || stops[0] || asked).slice(0, 80);
+  const known = qs.get('q') ? null : placeCandidate(trip0.place); // picked from autocomplete when the trip was made
+  let query = (qs.get('q') || (known ? known.label : '') || stops[0] || asked).slice(0, 80);
   let phase = 'idle'; // idle | searching | choosing | empty | loading | done | error
   let candidates = [];
   let chosen = null;
@@ -129,6 +130,7 @@ export function OnlineScreen(ctx) {
       return h('div', { class: 'screen explore-screen online-screen' },
         pageHeader({ title: 'Find places', subtitle: `${trip.name}${tripSubtitle(trip) ? ` · ${tripSubtitle(trip)}` : ''}`, back: { href: `#/trip/${tripId}/explore`, label: 'Back to Explore' }, actions: [iconButton({ icon: 'pack', label: 'Open packing list', href: `#/trip/${tripId}` })] }),
         guideTabs(tripId, 'places'),
+        known && (phase === 'idle' || phase === 'error') ? h('section', { class: 'card known-place' }, h('h2', { class: 'card-title', text: `Places around ${known.label}` }), h('p', { class: 'muted small', text: `${known.description} · ${coordsText(known.lat, known.lon)} (picked when you created the trip)` }), h('div', {}, button({ label: 'Find places here', icon: 'search', variant: 'primary', key: 'online-known', onClick: () => choose(known) }))) : null,
         searchForm(),
         h('p', { class: 'muted small' }, 'Searching sends only the place name to OpenStreetMap, and only when you tap the button.'),
         phase === 'idle' || phase === 'error' || phase === 'empty' || phase === 'choosing' || phase === 'searching' || phase === 'large' ? consent() : null,
