@@ -185,7 +185,7 @@ export function ExploreScreen(ctx) {
         filterBar,
         h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${plural(visible.length, 'place')} shown` }),
         h('div', { class: 'guide-results' }, results),
-        h('section', { class: 'card browse-other' }, h('h2', { class: 'card-title', text: 'Looking for more?' }), h('p', { class: 'muted small', text: `This guide is short. You can also look up more places near ${dest.name} online (optional; searches Wikipedia and Wikidata).` }), h('div', {}, button({ label: 'Find more places online', icon: 'search', variant: 'secondary', key: 'find-online', href: `#/trip/${tripId}/online?q=${encodeURIComponent(dest.name)}` }))),
+        h('section', { class: 'card browse-other' }, h('h2', { class: 'card-title', text: 'Looking for more?' }), h('p', { class: 'muted small', text: `This guide is short. You can also look up more places near ${dest.name} online (optional; searches OpenStreetMap).` }), h('div', {}, button({ label: 'Find more places online', icon: 'search', variant: 'secondary', key: 'find-online', href: `#/trip/${tripId}/online?q=${encodeURIComponent(dest.name)}` }))),
         h('section', { class: 'card browse-other' }, h('h2', { class: 'card-title', text: 'Browse another covered destination' }), coveredList()),
         disclaimer(),
       );

@@ -21,6 +21,7 @@ export function MoreScreen(ctx) {
         h('ul', { class: 'more-list card' },
           item(t('/studio'), 'luggage', 'Packing Studio', `Drop items into a 3D suitcase${where}`),
           item(t('/explore'), 'compass', 'Explore', `Places to see${where}, or add your own`),
+          item(t('/route'), 'route', 'Route', `Directions and places on the way${where}`),
           item(t('/taste'), 'utensils', 'Taste', `Local food and drinks${where}`),
           item(t('/guide'), 'heart', 'My Guide', `Saved places and dishes, day plan${where}`),
           item('#/templates', 'template', 'Templates', 'Start a trip from a saved list'),

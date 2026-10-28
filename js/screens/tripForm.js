@@ -4,12 +4,16 @@ import { icon } from '../ui/icons.js';
 import { button, field, segmented, selectInput, tiles } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
 import { BAG_KINDS, CONDITIONS, LIMITS, SEASONS, TRANSPORTS, TRIP_SCOPES, TRIP_TYPES, cleanDate } from '../models.js';
-import { HOME_COUNTRIES, getPrefs } from '../prefs.js';
+import { HOME_COUNTRIES, countryName, getPrefs } from '../prefs.js';
 import { getTrip, sortedTrips } from '../selectors.js';
 import { BUILTIN_TEMPLATES, builtinTemplateItems, defaultDays } from '../templates.js';
 import { seasonForDates, tripLengthDays } from '../progress.js';
 import { pageHeader, reviewScopeChange } from './shared.js';
 import { placeField } from '../ui/placefield.js';
+
+/** The starting point of the most recently created trip that has one. */
+const lastOrigin = (state) => [...state.trips].filter((t) => t.origin).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0]?.origin || null;
+const placeText = (p) => (p ? (p.cc && countryName(p.cc) && countryName(p.cc) !== p.name ? `${p.name}, ${countryName(p.cc)}` : p.name) : '');
 
 export function TripFormScreen(ctx, { mode }) {
   const { store, navigate, params } = ctx;
@@ -26,6 +30,7 @@ export function TripFormScreen(ctx, { mode }) {
     transport: existing?.transport ?? '',
     scope: existing?.scope || '', // new trips must choose; old trips can be left unset
     place: existing?.place || null, // set when a suggestion is picked; cleared when the text is edited by hand
+    origin: existing ? existing.origin || null : lastOrigin(store.state), // most trips start from the same place
     scopeTouched: Boolean(existing?.scope),
     travelers: existing?.travelers || 1,
     notes: existing?.notes || '',
@@ -88,7 +93,7 @@ export function TripFormScreen(ctx, { mode }) {
         scopeHint.textContent = `Set from the place you picked and your home country (${HOME_COUNTRIES.find((c) => c.id === home)?.label}). Change it if you like.`;
       }
       const suggestOn = getPrefs().placeSuggest;
-      const destinationField = field({ label: 'Destination', input: destination, hint: suggestOn ? 'Start typing to see matching places. Suggestions come from OpenStreetMap (photon.komoot.io), so what you type here is sent there. You can turn this off in Settings → Preferences.' : 'Place suggestions are off (Settings → Preferences). Type the destination yourself.' });
+      const destinationField = field({ label: 'Destination', input: destination, hint: suggestOn ? 'Start typing to see matching places. Suggestions come from OpenStreetMap (photon.komoot.io), so what you type here is sent there. You can turn this off in Settings → Preferences.' : 'Place suggestions are off (Settings → Preferences). Type the destination yourself, or tap Look up to find it on the map (sends what you typed to photon.komoot.io).' });
       destinationField.insertBefore(placeField({
         input: destination,
         picked: form.place ? form.destination : '', // editing the saved text drops the saved place
@@ -96,6 +101,15 @@ export function TripFormScreen(ctx, { mode }) {
         onPick: (p) => { form.place = { name: p.name, label: p.label, lat: p.lat, lon: p.lon, cc: p.cc, osm: p.osm, large: p.large }; form.destination = p.text; scopeFromPlace(form.place); },
         onClear: () => { form.place = null; },
       }), destinationField.children[1]);
+      const origin = h('input', { type: 'text', name: 'origin', maxlength: 80, value: placeText(form.origin), placeholder: 'Your town or city', autocomplete: 'off' });
+      const originField = field({ label: 'Starting from (optional)', input: origin, hint: 'For the Route page: distance, directions and places to see on the way. Pick it from the list so PackWise knows where it is.' });
+      originField.insertBefore(placeField({
+        input: origin,
+        picked: placeText(form.origin),
+        enabled: () => getPrefs().placeSuggest,
+        onPick: (p) => { form.origin = { name: p.name, label: p.label, lat: p.lat, lon: p.lon, cc: p.cc, osm: p.osm, large: p.large }; },
+        onClear: () => { form.origin = null; },
+      }), originField.children[1]);
       const errorBox = h('div', { class: 'form-errors', role: 'alert' });
 
       function submit(e) {
@@ -113,7 +127,8 @@ export function TripFormScreen(ctx, { mode }) {
           problems[0].el.focus();
           return;
         }
-        const fields = { place: form.place, name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, scope: form.scope, travelers: form.travelers, season: form.season, conditions: form.conditions, notes: form.notes };
+        const fields = { place: form.place, origin: form.origin, name: tripName, destination: dest, type: form.type, startDate: form.startDate, endDate: form.endDate, transport: form.transport, scope: form.scope, travelers: form.travelers, season: form.season, conditions: form.conditions, notes: form.notes };
+        if (origin.value.trim() && !form.origin) setTimeout(() => toast('Starting point not saved: pick it from the suggestions. You can also set it on the Route page.'), 0); // typed but never matched to a real place
         if (editing) {
           const scopeChanged = fields.scope && fields.scope !== existing.scope;
           store.updateTrip(existing.id, fields);
@@ -200,7 +215,7 @@ export function TripFormScreen(ctx, { mode }) {
 
       formEl.append(
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '1' }), 'Trip type'), tiles({ name: 'type', label: 'Trip type', options: TRIP_TYPES, value: form.type, className: 'tiles-types', onChange: (v) => { form.type = v; if (v === 'camping' && !editing && !form.bagsTouched) setBagTiles(['backpack', 'camping']); } })),
-        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), destinationField, field({ label: 'Trip name (optional)', input: name }), h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'scope-label', text: editing ? 'Where to?' : 'Where to? (required)' }), segmented({ name: 'scope', label: 'Where to?', value: form.scope, options: TRIP_SCOPES, onChange: (v) => { form.scope = v; form.scopeTouched = true; scopeHint.textContent = ''; } }), scopeHint, h('p', { class: 'muted small', text: 'Trips within your own country skip passport, insurance, bank-notice and adapter reminders. Unsure? Pick Abroad: you can remove anything you do not need.' }))),
+        h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '2' }), 'Destination'), destinationField, originField, field({ label: 'Trip name (optional)', input: name }), h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'scope-label', text: editing ? 'Where to?' : 'Where to? (required)' }), segmented({ name: 'scope', label: 'Where to?', value: form.scope, options: TRIP_SCOPES, onChange: (v) => { form.scope = v; form.scopeTouched = true; scopeHint.textContent = ''; } }), scopeHint, h('p', { class: 'muted small', text: 'Trips within your own country skip passport, insurance, bank-notice and adapter reminders. Unsure? Pick Abroad: you can remove anything you do not need.' }))),
         h('section', { class: 'form-section' }, h('h2', { class: 'section-title' }, h('span', { class: 'step', text: '3' }), 'Dates'), h('div', { class: 'grid-2' }, field({ label: 'Departure', input: start }), field({ label: 'Return', input: end })), h('p', { class: 'muted small', text: `Dates are optional. Without them, ${defaultDays(form.type)} days are assumed for the starter list.` })),
         weatherSection(),
         editing

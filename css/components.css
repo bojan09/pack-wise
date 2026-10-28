@@ -1251,8 +1251,29 @@ input[aria-invalid='true'] {
   position: relative;
 }
 
+.place-row {
+  position: relative; /* the suggestion list hangs under the input row */
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .place-field input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
+}
+
+.place-lookup {
+  flex: none;
+}
+
+.place-note:empty {
+  display: none;
+}
+
+.place-note {
+  margin: 6px 0 0;
 }
 
 .place-suggest {

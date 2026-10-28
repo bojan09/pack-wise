@@ -8,7 +8,11 @@
 // access are copied verbatim from its tags and labelled as community data; nothing is inferred or invented; places
 // without a recognisable type are dropped and counted. There is no API key, and no AI model is a source of facts.
 //
+// The Route page adds one more tap-only Overpass search: notable places near the straight line between the trip's
+// start and destination (only coordinates are sent).
+//
 // Network access goes through `getJson` only, which refuses any host outside ONLINE_HOSTS.
+import { onTheWay, pathPoints, corridorKm, distanceKm } from './route.js';
 
 export const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 export const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
@@ -215,7 +219,7 @@ const ACCESS = { yes: 'yes', limited: 'limited', no: 'no' };
  * Turn Overpass elements into places: attractions only, de-duplicated, notable ones first, nearest first.
  * @returns {{places: object[], dropped: number}}
  */
-export function parseElements(elements, lat, lon) {
+export function parseElements(elements, lat, lon, max = MAX_PLACES) {
   if (!Array.isArray(elements)) throw new OnlineError('format', FRIENDLY.format);
   const seen = new Set();
   const places = [];
@@ -249,27 +253,79 @@ export function parseElements(elements, lat, lon) {
     });
   }
   places.sort((a, b) => Number(b.notable) - Number(a.notable) || a.dist - b.dist);
-  const top = places.slice(0, MAX_PLACES).sort((a, b) => a.dist - b.dist);
-  return { places: top.map(({ notable, ...p }) => p), dropped: dropped + Math.max(0, places.length - MAX_PLACES) };
+  const top = places.slice(0, max).sort((a, b) => a.dist - b.dist);
+  return { places: top.map(({ notable, ...p }) => p), dropped: dropped + Math.max(0, places.length - max) };
 }
 
 // ------------------------------------------------------------------ nearby
-/** Attractions around a point. Tries the main Overpass server, then a mirror if the first is busy or unreachable. */
-export async function nearby(lat, lon, opts = {}) {
-  if (!inRange(lat, lon)) throw new OnlineError('input', FRIENDLY.input);
-  const data = overpassQuery(lat, lon, opts.radius);
+/** Run one Overpass query: the main server, then a mirror if the first is busy or unreachable. */
+async function overpass(data, opts) {
   let lastError = null;
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const body = await getJson(withParams(endpoint, { data }), opts);
       if (typeof body.remark === 'string' && /error|timed out|out of memory/i.test(body.remark) && !Array.isArray(body.elements)) throw new OnlineError('http', FRIENDLY.http);
-      return parseElements(body.elements, lat, lon);
+      return body.elements;
     } catch (e) {
       lastError = e;
       if (!['http', 'timeout', 'offline'].includes(e.code)) throw e; // garbage or bad input will not improve on a mirror
     }
   }
   throw lastError;
+}
+
+/** Attractions around a point. */
+export async function nearby(lat, lon, opts = {}) {
+  if (!inRange(lat, lon)) throw new OnlineError('input', FRIENDLY.input);
+  return parseElements(await overpass(overpassQuery(lat, lon, opts.radius), opts), lat, lon);
+}
+
+// ------------------------------------------------------------- on the way
+/**
+ * Overpass QL for notable attractions (those with a Wikidata link, so a long corridor stays small) within
+ * `radiusM` of a polyline. Numbers only; nothing typed is interpolated.
+ */
+export function corridorQuery(points, radiusM) {
+  const r = Math.max(1000, Math.min(10000, Math.round(radiusM)));
+  const line = points.map((p) => `${Number(p.lat).toFixed(4)},${Number(p.lon).toFixed(4)}`).join(',');
+  const a = `(around:${r},${line})`;
+  return `[out:json][timeout:25];(`
+    + `nwr["tourism"~"^(attraction|museum|gallery|viewpoint|zoo|theme_park)$"]["name"]["wikidata"]${a};`
+    + `nwr["historic"~"^(castle|fort|monument|ruins|archaeological_site|city_gate|palace|monastery|church)$"]["name"]["wikidata"]${a};`
+    + `nwr["amenity"="place_of_worship"]["name"]["wikidata"]${a};`
+    + `nwr["natural"~"^(waterfall|peak|cave_entrance|beach|hot_spring)$"]["name"]["wikidata"]${a};`
+    + `nwr["waterway"="waterfall"]["name"]["wikidata"]${a};`
+    + `nwr["leisure"~"^(park|nature_reserve)$"]["name"]["wikidata"]${a};`
+    + `);out center tags 400;`;
+}
+
+/** Notable attractions near the straight line from a to b, in travel order (see route.js for the geometry). */
+export async function alongTheWay(a, b, opts = {}) {
+  if (!a || !b || !inRange(a.lat, a.lon) || !inRange(b.lat, b.lon)) throw new OnlineError('input', FRIENDLY.input);
+  const radiusKm = corridorKm(distanceKm(a, b));
+  const { places, dropped } = parseElements(await overpass(corridorQuery(pathPoints(a, b), radiusKm * 1000), opts), a.lat, a.lon, 1000);
+  const stops = onTheWay(places, a, b, { radiusKm });
+  return { places: stops, dropped, radiusKm };
+}
+
+const pointKey = (p) => p.osm || `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+export const routeKey = (a, b) => `route:${pointKey(a)}>${pointKey(b)}`;
+
+/** Like `lookup`, for a route: cached for offline use, stale copy on network failure, `fresh` to refresh. */
+export async function routeLookup(a, b, { fresh = false, now = () => new Date().toISOString(), ...opts } = {}) {
+  if (!a || !b || !inRange(a.lat, a.lon) || !inRange(b.lat, b.lon)) throw new OnlineError('input', FRIENDLY.input);
+  const id = routeKey(a, b);
+  const cached = readCache(id);
+  if (cached && !fresh) return { ...cached, stale: false, fromCache: true };
+  try {
+    const { places, dropped, radiusKm } = await alongTheWay(a, b, opts);
+    const result = { id, label: `${a.name} → ${b.name}`, lat: a.lat, lon: a.lon, places, dropped, radiusKm, at: now() };
+    writeCache(id, result);
+    return { ...result, stale: false, fromCache: false };
+  } catch (e) {
+    if (cached && ['offline', 'timeout', 'http'].includes(e.code)) return { ...cached, stale: true, fromCache: true };
+    throw e;
+  }
 }
 
 // -------------------------------------------------------------------- cache

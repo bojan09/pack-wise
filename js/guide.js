@@ -149,6 +149,12 @@ export const googleCoordUrl = (lat, lon) => `https://www.google.com/maps/search/
 export const osmCoordUrl = (lat, lon) => `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=17/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`;
 export const wikipediaPageUrl = (pageId) => `https://en.wikipedia.org/?curid=${encodeURIComponent(pageId)}`; // legacy v4 entries only
 export const osmObjectUrl = (osm) => { const m = /^([nwr])(\d{1,12})$/.exec(osm || ''); return m ? `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[m[1]]}/${m[2]}` : ''; };
+// Directions links: open the user's maps app with the real road route and time (PackWise knows no roads).
+const ll = (p) => `${Number(p.lat).toFixed(5)},${Number(p.lon).toFixed(5)}`;
+/** Google Maps directions, optionally through up to 9 saved stops (in order). mode: driving | transit */
+export const googleDirectionsUrl = (a, b, mode = 'driving', stops = []) => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(ll(a))}&destination=${encodeURIComponent(ll(b))}&travelmode=${mode === 'transit' ? 'transit' : 'driving'}${stops.length ? `&waypoints=${encodeURIComponent(stops.slice(0, 9).map(ll).join('|'))}` : ''}`;
+export const appleDirectionsUrl = (a, b, mode = 'driving') => `https://maps.apple.com/?saddr=${encodeURIComponent(ll(a))}&daddr=${encodeURIComponent(ll(b))}&dirflg=${mode === 'transit' ? 'r' : 'd'}`;
+export const osmDirectionsUrl = (a, b) => `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${encodeURIComponent(`${ll(a)};${ll(b)}`)}`;
 export const wikipediaTextUrl = (text) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(text)}`;
 export const thingsToDoUrl = (text) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`things to do near ${text}`)}`;
 export const wikipediaSearchUrl = (place, dest) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${place.name} ${dest.name}`)}`;

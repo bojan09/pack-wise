@@ -2,7 +2,7 @@
 //   node scripts/check-online.mjs [place name]
 // The app's own tests use a fake server, so this is the only check that the real Photon (autocomplete), Nominatim and
 // Overpass responses still have the shape the code expects. It prints what it found and exits non-zero on any mismatch.
-import { findPlaces, nearby, suggestPlaces } from '../js/online.js';
+import { alongTheWay, findPlaces, nearby, suggestPlaces } from '../js/online.js';
 
 const name = process.argv[2] || 'Veles';
 const fail = (msg) => { console.error(`FAIL ${msg}`); process.exitCode = 1; };
@@ -23,6 +23,10 @@ try {
     for (const p of places) kinds[p.kind] = (kinds[p.kind] || 0) + 1;
     console.log('by kind:', kinds, `· with fee tag: ${places.filter((p) => p.fee).length} · with hours: ${places.filter((p) => p.hours).length}`);
   }
+  // Route: Skopje -> Ohrid (about 111 km), notable places near the straight line
+  const way = await alongTheWay({ lat: 41.9981, lon: 21.4254 }, { lat: 41.1172, lon: 20.8016 });
+  console.log(`${way.places.length} places on the way Skopje -> Ohrid (within ${way.radiusKm} km):`, way.places.map((p) => `${p.name} @${p.alongKm} km`));
+  if (!way.places.length) fail('no places on the way; check corridorQuery()');
 } catch (e) {
   fail(`${e.code || 'error'}: ${e.message}`);
 }

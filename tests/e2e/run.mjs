@@ -22,7 +22,7 @@ const PORT = 8123;
 const BASE = `http://localhost:${PORT}/`;
 let swVersionOverride = null;
 const server = await startServer(PORT, {
-  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.12.0'", `'${swVersionOverride}'`) : undefined),
+  rewrite: (path, body) => (path === '/sw.js' && swVersionOverride ? body.toString().replace("'packwise-v1.13.0'", `'${swVersionOverride}'`) : undefined),
 });
 const browser = await chromium.launch();
 
@@ -1883,7 +1883,7 @@ await test('explore: saved places survive backup/restore and trip duplication; d
   await page.goto(`${BASE}#/settings?tab=data`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export backup")')]);
   const file = JSON.parse(readFileSync(await dl.path(), 'utf8'));
-  assert.equal(file.schemaVersion, 6);
+  assert.equal(file.schemaVersion, 7);
   assert.equal(file.data.entries.length, 2);
   await page.click('button:has-text("Clear data")');
   await page.click('dialog button:has-text("Delete everything")');
@@ -1916,7 +1916,7 @@ await test('explore: an existing v1 database upgrades to v2 without losing trips
   assert.deepEqual(after.entries, []);
   assert.equal(await page.locator('.banner-error').count(), 0);
   const raw = await idbSnapshotRaw(page);
-  assert.equal(raw.version, 6);
+  assert.equal(raw.version, 7);
   await page.goto(explorePath(after.trips[0].id));
   await page.waitForSelector('.place-card');
   await page.click('.save-btn >> nth=0');
@@ -1939,7 +1939,7 @@ await test('upgrade: a v2 database (saved places, no own places) upgrades to the
   assert.deepEqual(after.trips, before.trips);
   assert.deepEqual(after.entries, before.entries);
   assert.equal(await page.locator('.banner-error').count(), 0);
-  assert.equal((await idbSnapshotRaw(page)).version, 6);
+  assert.equal((await idbSnapshotRaw(page)).version, 7);
   await page.goto(guidePath(id));
   await page.waitForSelector('.guide-row');
   await page.click('button:has-text("Add your own place")');
@@ -2083,7 +2083,7 @@ await test('PWA: manifest valid, icons reachable, service worker controls page',
   const link = await page.getAttribute('link[rel=manifest]', 'href');
   assert.equal(link, 'manifest.webmanifest');
   const keys = await page.evaluate(() => caches.keys());
-  assert.deepEqual(keys, ['packwise-v1.12.0']);
+  assert.deepEqual(keys, ['packwise-v1.13.0']);
 }, { sw: true });
 
 await test('offline: after first load the app reopens, works and persists offline', async ({ page, ctx }) => {
@@ -2123,7 +2123,7 @@ await test('service worker update: new version waits, prompts, preserves data, t
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   await page.waitForSelector('.toast:has-text("new version")');
   // old shell keeps running until the user agrees
-  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.12.0', 'packwise-v9.9.9-test']);
+  assert.deepEqual(await page.evaluate(() => caches.keys()).then((k) => k.sort()), ['packwise-v1.13.0', 'packwise-v9.9.9-test']);
   // an open dialog (unsaved edit) blocks the reload, even if the toast button is triggered programmatically
   await page.click('button[aria-label="Edit T-shirts"]');
   await page.evaluate(() => document.querySelector('.toast-action').click());
@@ -2397,7 +2397,7 @@ await test('guide: empty state, entry points, tabs; nothing saved means nothing 
   assert.ok(page.url().endsWith(`/trip/${id}/guide`));
   assert.equal(await page.locator('.guide-row').count(), 0);
   assert.equal(await page.locator('.guide-tab[aria-current=page]').innerText(), 'My Guide');
-  assert.deepEqual(await page.locator('.guide-tab').allInnerTexts(), ['Places', 'Taste', 'My Guide']);
+  assert.deepEqual(await page.locator('.guide-tab').allInnerTexts(), ['Places', 'Route', 'Taste', 'My Guide']);
   await page.click('.guide-tab:has-text("Places")');
   await page.waitForSelector('.place-card');
   await page.goto(`${BASE}#/trip/${id}/summary`);
@@ -2990,7 +2990,7 @@ await test('mobile: the More tab reaches every feature the desktop sidebar has; 
   await page.waitForSelector('.more-list');
   assert.ok(page.url().endsWith('#/more'));
   assert.equal(await page.getAttribute('.nav-item[data-nav=more]', 'aria-current'), 'page');
-  const wanted = [['Packing Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Taste', `/trip/${id}/taste`, '.food-card'], ['My Guide', `/trip/${id}/guide`, '.guide-tab'], ['Templates', '/templates', 'h1'], ['Settings', '/settings', '[role=tab]']];
+  const wanted = [['Packing Studio', `/trip/${id}/studio`, '.stage'], ['Explore', `/trip/${id}/explore`, '.place-card'], ['Route', `/trip/${id}/route`, '.route-points'], ['Taste', `/trip/${id}/taste`, '.food-card'], ['My Guide', `/trip/${id}/guide`, '.guide-tab'], ['Templates', '/templates', 'h1'], ['Settings', '/settings', '[role=tab]']];
   assert.deepEqual(await page.locator('.more-item strong').allInnerTexts(), wanted.map((w) => w[0]));
   for (const [label, path, ready] of wanted) {
     await page.goto(`${BASE}#/more`);
@@ -3005,7 +3005,7 @@ await test('mobile: the More tab reaches every feature the desktop sidebar has; 
   // each More item works for a fresh install too (no trips): it sends you to create one instead of a dead end
   await page.evaluate(() => window.__packwise.store.clearAll());
   await page.goto(`${BASE}#/more`);
-  assert.equal(await page.locator('.more-item[href="#/trips/new"]').count(), 4);
+  assert.equal(await page.locator('.more-item[href="#/trips/new"]').count(), 5);
   // desktop: Settings is in the sidebar and More is hidden
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${BASE}#/`);
@@ -3254,6 +3254,8 @@ await test('online: a v4 entry saved from the earlier Wikipedia version still di
 const PHOTON_FEATURES = [
   { geometry: { coordinates: [21.7756, 41.7156] }, properties: { osm_type: 'R', osm_id: 1234, osm_key: 'place', osm_value: 'town', type: 'city', name: 'Veles', state: 'Vardar Region', country: 'North Macedonia', countrycode: 'MK' } },
   { geometry: { coordinates: [25.1, 42.5] }, properties: { osm_type: 'N', osm_id: 99, osm_key: 'place', osm_value: 'village', type: 'city', name: 'Veles', state: 'Gabrovo', country: 'Bulgaria', countrycode: 'BG' } },
+  { geometry: { coordinates: [21.4254, 41.9981] }, properties: { osm_type: 'R', osm_id: 2600, osm_key: 'place', osm_value: 'city', type: 'city', name: 'Skopje', state: 'Skopje Region', country: 'North Macedonia', countrycode: 'MK' } },
+  { geometry: { coordinates: [20.8016, 41.1172] }, properties: { osm_type: 'R', osm_id: 2700, osm_key: 'place', osm_value: 'town', type: 'city', name: 'Ohrid', state: 'Southwestern Region', country: 'North Macedonia', countrycode: 'MK' } },
   { geometry: { coordinates: [12.3, 41.9] }, properties: { osm_type: 'R', osm_id: 41485, osm_key: 'place', osm_value: 'city', type: 'city', name: 'Rome', state: 'Lazio', country: 'Italy', countrycode: 'IT' } },
 ];
 async function mockPhoton(page, state = {}) {
@@ -3375,6 +3377,121 @@ await test('autocomplete: a picked place lets Explore search around it without a
   await page.waitForSelector('.food-card');
 });
 
+// ============================================================ Route (start → destination), mocked Photon + Overpass
+const ROUTE_ELEMENTS = [
+  { type: 'node', id: 501, lat: 41.338, lon: 20.957, tags: { name: 'Lake Viewpoint', tourism: 'viewpoint', wikidata: 'Q501' } },
+  { type: 'node', id: 502, lat: 41.5585, lon: 21.1105, tags: { name: 'Middle Monastery', historic: 'monastery', wikidata: 'Q502', fee: 'no' } },
+  { type: 'node', id: 503, lat: 41.56, lon: 21.4, tags: { name: 'Far Peak', natural: 'peak', wikidata: 'Q503' } },
+];
+async function mockRoute(page, state = {}) {
+  const log = [];
+  await page.route(OSM_HOSTS, async (route) => {
+    const url = new URL(route.request().url());
+    log.push({ host: url.hostname, params: Object.fromEntries(url.searchParams) });
+    if (state.fail) return route.abort('failed');
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ elements: ROUTE_ELEMENTS }) });
+  });
+  return log;
+}
+
+await test('route: start and destination picked in the form; straight-line distance, directions links, places on the way on a tap, saved stops in the route, offline copy', async ({ page }) => {
+  await skipWelcome(page);
+  await mockPhoton(page);
+  const state = {};
+  const osm = await mockRoute(page, state);
+  await page.goto(`${BASE}#/trips/new`);
+  await page.locator('input[name=destination]').pressSequentially('Ohr', { delay: 30 });
+  await page.click('.place-option:has-text("Ohrid")');
+  await page.locator('input[name=origin]').pressSequentially('Sko', { delay: 30 });
+  await page.click('.place-option:has-text("Skopje")');
+  await generate(page);
+  await page.waitForSelector('h1:has-text("Ohrid")');
+  const trip = (await tripState(page)).trips[0];
+  assert.equal(trip.origin.name, 'Skopje');
+  assert.equal(trip.place.name, 'Ohrid');
+  // the next new trip starts from the same place
+  await page.goto(`${BASE}#/trips/new`);
+  assert.equal(await page.locator('input[name=origin]').inputValue(), 'Skopje, North Macedonia');
+  await page.goto(`${BASE}#/trip/${trip.id}/route`);
+  await page.waitForSelector('.route-summary');
+  assert.match(await page.locator('.route-km').innerText(), /^1\d\d km in a straight line, heading south-west$/);
+  assert.match(await page.locator('.route-summary').innerText(), /Roads are longer than a straight line/);
+  const hrefs = await page.locator('.route-links a').evaluateAll((as) => as.map((a) => a.href));
+  assert.equal(hrefs.length, 3);
+  assert.equal(new URL(hrefs[0]).searchParams.get('origin'), '41.99810,21.42540');
+  assert.equal(new URL(hrefs[0]).searchParams.get('destination'), '41.11720,20.80160');
+  assert.equal(new URL(hrefs[1]).host, 'maps.apple.com');
+  assert.deepEqual(osm, [], 'nothing sent before a tap');
+  await page.click('button:has-text("Find places on the way")');
+  await page.waitForSelector('.route-stops .web-card');
+  assert.equal(osm.length, 1);
+  assert.equal(osm[0].host, 'overpass-api.de');
+  assert.match(osm[0].params.data, /around:5000,41\.9981,21\.4254,/);
+  assert.deepEqual(await page.locator('.route-stops h3').allInnerTexts(), ['Middle Monastery', 'Lake Viewpoint'], 'travel order; off-line place left out');
+  assert.match(await page.locator('.route-stops .web-card').first().innerText(), /km from the start[\s\S]*on the line/);
+  await page.click('.route-stops .web-card:has-text("Middle Monastery") .save-btn');
+  await page.waitForSelector('a[data-key="route-with-stops"]');
+  const withStops = new URL(await page.locator('a[data-key="route-with-stops"]').getAttribute('href'));
+  assert.equal(withStops.searchParams.get('waypoints'), '41.55850,21.11050');
+  assert.match(await page.locator('a[data-key="route-with-stops"]').innerText(), /Google Maps with 1 saved stop/);
+  assert.ok((await tripState(page)).entries.some((e) => e.refId === 'o-n502' && e.saved), 'saved into My Guide');
+  // offline: the earlier result comes back from this device without any request
+  state.fail = true;
+  await page.reload();
+  await page.waitForSelector('.route-stops .web-card');
+  assert.match(await page.locator('.route-way').first().innerText(), /Shown from the copy saved on this device/);
+  assert.equal(osm.length, 1);
+}, { ignoreConsole: /Failed to load resource/ });
+
+await test('route: points set on the Route page; Look up works with suggestions off; missing, too-close and flying states', async ({ page }) => {
+  await skipWelcome(page);
+  const photon = await mockPhoton(page);
+  await mockRoute(page);
+  await createTrip(page, { dest: 'Ohrid holiday', type: 'Custom' });
+  const id = await firstTrip(page);
+  await page.goto(`${BASE}#/trip/${id}/route`);
+  await page.waitForSelector('.route-points');
+  assert.match(await page.locator('.route-screen').innerText(), /Set where you start and where you are going/);
+  assert.equal(await page.locator('.guide-tab[aria-current=page]').innerText(), 'Route');
+  // start, with suggestions on
+  await page.click('button[data-key="set-origin"]');
+  await page.locator('dialog input[name=point]').pressSequentially('Sko', { delay: 30 });
+  await page.click('dialog .place-option:has-text("Skopje")');
+  await page.waitForSelector('dialog', { state: 'detached' });
+  assert.match(await page.locator('.route-points').innerText(), /Skopje/);
+  // destination, with suggestions off: nothing is sent until Look up
+  await page.goto(`${BASE}#/settings?tab=preferences`);
+  await page.click('input[name=placeSuggest]');
+  await page.goto(`${BASE}#/trip/${id}/route`);
+  await page.click('button[data-key="set-place"]');
+  const before = photon.length;
+  const input = page.locator('dialog input[name=point]');
+  await input.fill('');
+  await input.pressSequentially('Ohr', { delay: 30 });
+  await page.waitForTimeout(600);
+  assert.equal(photon.length, before, 'no request while typing');
+  await page.click('dialog button:has-text("Look up")');
+  await page.waitForSelector('dialog .place-option');
+  assert.equal(photon.length, before + 1);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.route-summary');
+  const trip = (await tripState(page)).trips.find((t) => t.id === id);
+  assert.equal(trip.place.name, 'Ohrid');
+  assert.equal(trip.destination, 'Ohrid holiday', 'the trip name/destination text is left alone');
+  // flying: say so
+  await page.evaluate((tid) => window.__packwise.store.updateTrip(tid, { transport: 'flight' }), id);
+  await page.waitForFunction(() => /You are flying/.test(document.querySelector('.route-summary')?.textContent || ''));
+  // too close for "on the way"
+  await page.evaluate((tid) => window.__packwise.store.updateTrip(tid, { origin: { name: 'Struga', label: 'Struga', lat: 41.1778, lon: 20.6783 } }), id);
+  await page.waitForFunction(() => /nothing “on the way”/.test(document.querySelector('.route-screen')?.textContent || ''));
+  // remove the start
+  await page.click('button[data-key="set-origin"]');
+  await page.click('dialog button:has-text("Remove starting point")');
+  await page.waitForFunction(() => /Where does the trip start\?/.test(document.querySelector('.route-screen')?.textContent || ''));
+  assert.equal((await tripState(page)).trips.find((t) => t.id === id).origin, null);
+});
+
 await test('precache list covers every runtime file and versions agree', async () => {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   const listed = new Set([...sw.matchAll(/^\s+'([^']+)',$/gm)].map((m) => m[1]));
@@ -3395,7 +3512,7 @@ await test('no innerHTML / eval / external URLs in app code', async () => {
     if (/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(/.test(src)) offenders.push(`${f}: unsafe API`);
     const urls = [...src.matchAll(/https?:\/\/[^\s'"`)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
     // guide.js builds user-opened outbound search links (never fetched); CSP still blocks any fetch to them
-    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org)\// : f.endsWith('js/online.js') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io|www\.openstreetmap\.org)(\/|$)/ : f.endsWith('index.html') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io);?$/ : null; // the only network module: two fixed hosts
+    const allowed = f.endsWith('js/guide.js') ? /^https:\/\/(www\.openstreetmap\.org|www\.google\.com\/maps|en\.wikipedia\.org|maps\.apple\.com)\// : f.endsWith('js/online.js') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io|www\.openstreetmap\.org)(\/|$)/ : f.endsWith('index.html') ? /^https:\/\/(nominatim\.openstreetmap\.org|overpass-api\.de|overpass\.kumi\.systems|photon\.komoot\.io);?$/ : null; // the only network module: fixed OpenStreetMap hosts
     if (allowed) urls.splice(0, urls.length, ...urls.filter((u) => !allowed.test(u)));
     if (urls.length) offenders.push(`${f}: external URL ${urls[0]}`);
   }

@@ -54,6 +54,18 @@ Last updated: end of **Phase 3 (hardening, settings, release prep)** (smart trav
 - Tests: 54 unit (adds contrast audit of tokens + accents, export, recovery, safety copy, install advice), e2e adds tabs/backgrounds, haptics, text/print export, quota recovery, newer-version guard, migration safety copy, install help, cache repair, completion scene, dead-link crawl, privacy audit (same-origin GET only, no cookies, preference-only localStorage), keyboard flow, startup timing, full critical workflow, dark-theme sweep.
 - Known gaps: Chromium only; no Lighthouse/screen-reader runs; deployment not verified (no Pages access); `_headers` untested on a real host; contrast audited for tokens/accents, not every computed pair.
 
+## v1.13.0: Route (schema v7)
+
+- **Schema v7**: `trip.origin` (same shape and validation as `place`, `normalizePlace`). Migration 6→7 is a no-op. The trip form has *Starting from (optional)*, prefilled for new trips from the most recently created trip with an origin; typed-but-not-picked text is not saved (a toast says so).
+- `js/route.js` (pure): `distanceKm`, `bearing`, `compass`, `pathPoints` (great-circle, ≤25 points), `corridorKm`, `alongTrack`, `onTheWay` (corridor + end gap + cap 40, nearest-to-line wins the cap, travel order), `travelMode` (train/bus → transit, else driving), `kmText`. Limits `ROUTE_MIN_KM` 15, `ROUTE_MAX_KM` 1500, `MAX_WAYPOINTS` 9.
+- `js/online.js`: Overpass call factored into `overpass()` (main → mirror); `corridorQuery(points, radiusM)` (numbers only, Wikidata-linked only), `alongTheWay(a, b)`, `routeLookup(a, b, {fresh})` cached under `route:<a>><b>` in the same `packwise.online.v2` blob (stale copy offline). `parseElements` takes a `max`.
+- `js/guide.js`: `googleDirectionsUrl` (with waypoints), `appleDirectionsUrl` (new outbound link host `maps.apple.com`, allowed in the e2e URL test for guide.js only; it is a link, never fetched), `osmDirectionsUrl`.
+- `js/screens/route.js` (`#/trip/:id/route`, lazy, precached; a fourth guide tab and a More item): endpoints card with Set/Change dialogs (placeField; saves on pick; the destination text is never rewritten), straight-line summary, directions links, flight note, *On the way* (consent text, tap to search, cached result shown without a request), saved stops in corridor → Google Maps route.
+- `js/ui/webcard.js`: the online place card, shared by Find places and Route.
+- `js/ui/placefield.js`: with suggestions off, a *Look up* button runs the same Photon search once on a tap, with visible feedback.
+- Guide tabs: no wrapping; icons hidden under 420 px so four labels fit at 360 px.
+- Tests: unit `route.test.js` (geometry, corridor filter, links, query, lookup cache/stale/mirror, origin normalisation); e2e `route:` (form pick + prefill, summary/links, nothing sent before a tap, travel order, saved stop → waypoints, offline copy; Route-page dialogs, Look up with suggestions off, flight and too-close states, remove start).
+
 ## v1.12.0: destination autocomplete (schema v6)
 
 - `js/online.js`: `PHOTON` + `suggestPlaces(q, {signal})` (GET `q`, `limit=7`, `lang=en`; `[]` under 3 chars; drops street/house and highway/building features; dedupes by label; max 6 → `{name,label,country,lat,lon,cc,osm,large}`). `getJson` takes an external `signal`; aborting it throws code `cancelled`. `placeCandidate(place)` turns a stored place into a lookup candidate. `ONLINE_HOSTS` gains `photon.komoot.io` (CSP in `index.html` and `_headers` too).

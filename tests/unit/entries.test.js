@@ -12,10 +12,10 @@ const fresh = async (opts) => { const a = createMemoryAdapter(opts); const s = c
 const mk = (s, name = 'Belgrade') => s.createTrip({ name, destination: name, type: 'city' }, { bagKinds: ['carry-on'] });
 
 test('schema is v2 and v1 data migrates with empty entries', () => {
-  assert.equal(SCHEMA_VERSION, 6);
+  assert.equal(SCHEMA_VERSION, 7);
   const r = migrate({ trips: [] }, 1);
-  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 6, true, []]);
-  assert.deepEqual([migrate({ trips: [], entries: [] }, 2).from, migrate({ trips: [], entries: [] }, 2).to], [2, 6]);
+  assert.deepEqual([r.from, r.to, r.changed, r.data.entries], [1, 7, true, []]);
+  assert.deepEqual([migrate({ trips: [], entries: [] }, 2).from, migrate({ trips: [], entries: [] }, 2).to], [2, 7]);
   assert.deepEqual(migrate({ trips: [], entries: [{ id: 'x' }] }, 1).data.entries, [{ id: 'x' }]); // never drops existing
 });
 

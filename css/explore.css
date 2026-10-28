@@ -271,6 +271,9 @@
 .guide-tabs {
   display: inline-flex;
   align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto; /* four tabs: scroll sideways on very narrow phones rather than wrap */
+  scrollbar-width: none;
   gap: 4px;
   padding: 4px;
   border-radius: 999px;
@@ -278,17 +281,25 @@
 }
 
 .guide-tab {
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 34px;
-  padding: 0 14px;
+  padding: 0 clamp(9px, 2.6vw, 14px);
   border-radius: 999px;
   font-weight: 700;
   font-size: 0.9rem;
   color: var(--muted);
   text-decoration: none;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+@media (max-width: 420px) {
+  .guide-tab svg {
+    display: none; /* four labels fit on a 360 px phone without the icons */
+  }
 }
 
 .guide-tab.is-active {
@@ -603,4 +614,78 @@
 
 .web-hours {
   flex: 1 1 100%;
+}
+
+/* ===================== Route ===================== */
+.route-points {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-point {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.route-point + .route-point::before {
+  /* the line joining start and destination */
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: -18px;
+  height: 28px;
+  border-left: 2px dashed var(--muted);
+  opacity: 0.5;
+}
+
+.route-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 4px solid var(--accent);
+  background: var(--surface);
+}
+
+.route-dot-place {
+  border-color: var(--coral);
+  background: var(--coral);
+}
+
+.route-point-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.route-km strong {
+  font-size: 1.6rem;
+  font-family: var(--font-display, inherit);
+}
+
+.route-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.route-way {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.route-stops {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }

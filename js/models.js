@@ -1,8 +1,8 @@
 // Data models, enums, factories and normalizers. Pure: no DOM, no storage.
 
-export const SCHEMA_VERSION = 6; // v6: trips may carry `place` (the destination picked from autocomplete: name, coordinates, country)
+export const SCHEMA_VERSION = 7; // v6: trips may carry `place` (the destination picked from autocomplete); v7: `origin` (where the trip starts)
 // earlier: v2 guide `entries`; v3 user-written `custom` entries; v4 `web` entries from the online lookup; v5 web entries come from OpenStreetMap (osm id, fee, hours, wheelchair, website); v4 Wikipedia ones stay valid
-export const APP_VERSION = '1.12.0';
+export const APP_VERSION = '1.13.0';
 
 export const CATEGORY_PRESETS = [
   { id: 'clothing', label: 'Clothing', icon: 'shirt' },
@@ -173,7 +173,7 @@ export function normalizeConditions(v) {
   return CONDITION_IDS.filter((id) => v.includes(id)); // canonical order, deduplicated, unknown dropped
 }
 
-/** The destination as picked from autocomplete, or null. Coordinates and country come from OpenStreetMap (Photon). */
+/** A destination or starting point as picked from autocomplete, or null. Coordinates and country come from OpenStreetMap (Photon). */
 export function normalizePlace(p) {
   if (!isObj(p)) return null;
   const name = cleanText(p.name, 80);
@@ -208,8 +208,9 @@ export function normalizeTrip(raw) {
     startDate,
     endDate,
     transport: enumOr(raw.transport, TRANSPORT_IDS, ''),
-    scope: enumOr(raw.scope, SCOPE_IDS, ''),
-    place: normalizePlace(raw.place), // '' = not chosen (older trips): treated like abroad
+    scope: enumOr(raw.scope, SCOPE_IDS, ''), // '' = not chosen (older trips): treated like abroad
+    place: normalizePlace(raw.place),
+    origin: normalizePlace(raw.origin), // the starting point, picked the same way; used by the Route page
     travelers: clampInt(raw.travelers, 1, LIMITS.maxTravelers, 1),
     season: enumOr(raw.season, SEASON_IDS, ''),
     conditions: normalizeConditions(raw.conditions ?? LEGACY_CLIMATE[raw.climate]),

@@ -48,6 +48,12 @@ const MIGRATIONS = [
     to: 6,
     up: (data) => data,
   },
+  {
+    // v6 -> v7: trips may carry `origin` (the starting point, for the Route page). Additive.
+    from: 6,
+    to: 7,
+    up: (data) => data,
+  },
 ];
 
 /**

@@ -81,6 +81,10 @@ Any town or city can be looked up: **Explore → Find places online** searches O
 
 The Destination field suggests real places as you type (OpenStreetMap via Photon, no API key): pick one and the trip remembers where it is (name, region, country, coordinates), the *within my country / abroad* choice is set from your home country, and *Find places online* can search around it straight away. On by default with a notice under the field; turn it off in Settings → Preferences and nothing is sent while typing. Typing a destination by hand always works.
 
+## v1.13.0: Route
+
+Trips can have a **starting point** (picked like the destination; new trips reuse the last one). The new **Route** tab (Explore → Route, or More → Route on a phone) shows the straight-line distance and direction, opens the real route in **Google Maps, Apple Maps or OpenStreetMap**, and on a tap finds notable places **on the way** (castles, museums, viewpoints, waterfalls… within a few km of the line). Save a stop with the heart: it goes into My Guide and into a Google Maps route through your saved stops. PackWise never shows road distances or travel times it cannot know; your maps app does that.
+
 ## Run it
 
 Any static file server works. Service workers need `https://` or `http://localhost`.
